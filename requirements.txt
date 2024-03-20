@@ -1,0 +1,5 @@
+# This is doing an editable install on the relative path
+-e ../agent0[all]
+gymnasium
+scipy
+stable-baselines3
