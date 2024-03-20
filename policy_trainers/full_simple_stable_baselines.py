@@ -4,7 +4,7 @@ import os
 
 import gymnasium as gym
 import numpy as np
-from stable_baselines3 import A2C
+from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.monitor import Monitor, load_results
 from stable_baselines3.common.results_plotter import ts2xy
@@ -85,6 +85,7 @@ def run_train():
 
     gym_config = FullHyperdriveEnv.Config()
     env = gym.make("traiderdaive/full_hyperdrive_env", gym_config=gym_config)
+    env.interactive_hyperdrive.run_dashboard()
 
     env = Monitor(env, log_dir)
 
@@ -92,7 +93,7 @@ def run_train():
     callback = SaveOnBestTrainingRewardCallback(check_freq=10, log_dir=log_dir)
 
     # Training
-    model = A2C("MultiInputPolicy", env, verbose=1, device="cpu")
+    model = PPO("MultiInputPolicy", env, verbose=1, device="cpu")
     model.learn(total_timesteps=100000, callback=callback)
 
 
