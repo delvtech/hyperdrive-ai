@@ -85,7 +85,7 @@ def run_train():
 
     gym_config = FullHyperdriveEnv.Config()
     env = gym.make("traiderdaive/full_hyperdrive_env", gym_config=gym_config)
-    env.interactive_hyperdrive.run_dashboard()
+    env.chain.run_dashboard()
 
     env = Monitor(env, log_dir)
 
