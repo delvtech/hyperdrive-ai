@@ -1,2 +1,10 @@
+# Python environment
 .python-version
 .venv
+
+# OS Files
+**/.DS*
+
+# Output Dirs
+**/.interactive_state
+**/.traider_models
