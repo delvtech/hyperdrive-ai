@@ -100,6 +100,7 @@ if __name__ == "__main__":
         # NOTE we can't create checkpoints here, because the server is running in
         # manual mining mode. Ensure we don't advance time more than a checkpoint duration.
         s_chain._web3.provider.make_request(method=RPCEndpoint("anvil_mine"), params=[])
+        # TODO advancing time as the block mine here runs into `out of gas` error.
         # s_chain.advance_time(time_delta=1800, create_checkpoints=False)
 
         # Wait for all background tasks to finish
