@@ -1,0 +1,40 @@
+[project]
+name = "hyperdrive-ai"
+version = "0"
+# Authors are the current, primary stewards of the repo
+# contributors can be found on github
+authors = [
+    { name = "Dylan Paiton", email = "dylan@delv.tech" },
+    { name = "Sheng Lundquist", email = "sheng@delv.tech" },
+    { name = "Will Shainin", email = "TODO" },
+]
+description = "AI using agent0"
+readme = "README.md"
+requires-python = ">=3.10, <=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+    "Natural Language :: English",
+]
+
+[tool.pylint.format]
+max-line-length = "120"
+
+[tool.black]
+line-length = 120
+extend-exclude = "\\.ipynb"
+
+[tool.pylint]
+exclude = [".venv", ".vscode", "docs", "src/agent0/hypertypes/types/"]
+
+[tool.pylance]
+exclude = [".venv", ".vscode", "docs"]
+
+[tool.pyright]
+exclude = [".venv", ".vscode", "docs"]
+
+[tool.isort]
+line_length = 120
+profile = "black"
