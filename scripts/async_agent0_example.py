@@ -70,11 +70,10 @@ if __name__ == "__main__":
         for pk in agent_pks
     ]
 
-    ## After initialization, we set the chain to be manual mine mode
+    # After initialization, we set the chain to be manual mine mode
     server_chain._web3.provider.make_request(method=RPCEndpoint("evm_setAutomine"), params=[False])
 
     ### Make async trades
-
     # Need async function definition for running the background tasks
     async def run_trades(c_agents: list[HyperdriveAgent], s_chain: LocalChain) -> Sequence[BaseHyperdriveEvent]:
         # Make trades on the client side asynchronously via threads
@@ -95,11 +94,12 @@ if __name__ == "__main__":
         # that gets complicated, likely due to the GIL.
         await asyncio.sleep(1)
 
-        # TODO we may want to expose an actual mine function,
-        # but for now we advance time, which mines a block.
+        # We call `anvil_mine` to manually mine a block
+        s_chain._web3.provider.make_request(method=RPCEndpoint("anvil_mine"), params=[])
+
+        # NOTE we can also use a single advance time here to mine the block instead of the above
         # NOTE we can't create checkpoints here, because the server is running in
         # manual mining mode. Ensure we don't advance time more than a checkpoint duration.
-        s_chain._web3.provider.make_request(method=RPCEndpoint("anvil_mine"), params=[])
         # TODO advancing time as the block mine here runs into `out of gas` error.
         # s_chain.advance_time(time_delta=1800, create_checkpoints=False)
 
@@ -112,8 +112,9 @@ if __name__ == "__main__":
 
     # View trades
     # NOTE since the trades happened on the client object, and remote objects do lazy db updating,
-    # we need to either explicitly sync the server pool events, or reference events from the
-    # client pool (which automatically syncs events when called).
+    # we need to either explicitly sync the server pool events.
     server_pool._run_blocking_data_pipeline()
     events = server_pool.get_trade_events()
-    pass
+
+    # All trades happen on the same block.
+    print(events)
