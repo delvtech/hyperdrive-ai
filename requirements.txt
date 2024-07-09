@@ -3,3 +3,4 @@
 gymnasium
 scipy
 stable-baselines3
+ray[rllib]
