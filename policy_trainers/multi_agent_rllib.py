@@ -4,23 +4,20 @@ import os
 
 import gymnasium as gym
 import ray
-
 from ray.rllib.algorithms import ppo
-from ray.rllib.utils.test_utils import (
-    add_rllib_example_script_args,
-    run_rllib_example_script_experiment,
-)
+from ray.rllib.utils.test_utils import add_rllib_example_script_args, run_rllib_example_script_experiment
 from ray.tune.logger import pretty_print
 from ray.tune.registry import get_trainable_cls
+
+# Import registers hyperdrive envs
+# from agent0.traiderdaive import FullHyperdriveEnv
+from traiderdaive.ray_environments.ray_hyperdrive_env import POLICY_PREFIX, RayHyperdriveEnv
 
 # from stable_baselines3 import PPO
 # from stable_baselines3.common.callbacks import BaseCallback
 # from stable_baselines3.common.monitor import Monitor, load_results
 # from stable_baselines3.common.results_plotter import ts2xy
 
-# Import registers hyperdrive envs
-# from agent0.traiderdaive import FullHyperdriveEnv
-from gym_environments.ray_hyperdrive_env import RayHyperdriveEnv, POLICY_PREFIX
 
 # Policy params listed in /ray/rllib/models/catalog.py
 model_params = {"uses_new_env_runners": True, "vf_share_layers": False}
@@ -86,9 +83,7 @@ def run_train():
         # .environment(env=RayHyperdriveEnv, env_config=asdict(gym_config))
         # TODO: Not sure about the best way to pass config to env
         .environment(env=RayHyperdriveEnv, env_config={"gym_config": gym_config})
-        .api_stack(
-            enable_rl_module_and_learner=True, enable_env_runner_and_connector_v2=True
-        )
+        .api_stack(enable_rl_module_and_learner=True, enable_env_runner_and_connector_v2=True)
         .env_runners(num_env_runners=2, num_envs_per_env_runner=1)
         .resources(num_cpus_for_main_process=1)
         .learners(num_learners=0, num_gpus_per_learner=0, num_cpus_per_learner=1)
@@ -96,9 +91,7 @@ def run_train():
         .multi_agent(
             policies=set(policies),
             # Simple mapping fn, mapping agent0 to main0 and agent1 to main1.
-            policy_mapping_fn=(
-                lambda agent_id, episode, **kwargs: f"{POLICY_PREFIX}{agent_id[-1]}"
-            ),
+            policy_mapping_fn=(lambda agent_id, episode, **kwargs: f"{POLICY_PREFIX}{agent_id[-1]}"),
             policies_to_train=policies,
         )
     )
