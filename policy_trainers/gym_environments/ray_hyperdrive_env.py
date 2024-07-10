@@ -18,6 +18,7 @@ from scipy.special import expit
 from agent0 import LocalChain, LocalHyperdrive, PolicyZoo
 
 AGENT_PREFIX = "agent"
+POLICY_PREFIX = "policy"
 
 # Global suppression of warnings, TODO fix
 warnings.filterwarnings("ignore")
@@ -46,7 +47,6 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # RL Agents Config
         num_agents: int = 2
-        # agents: set[str] = field(default_factory=lambda: set({"agent0", "agent1"}))
         # The constant trade amounts for longs and shorts
         rl_agent_budget: FixedPoint = FixedPoint(1_000_000)
         max_trade_amount: FixedPoint = FixedPoint(1_000)
@@ -104,22 +104,25 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
     def __init__(
         self,
-        env_context,
+        env_config,
     ):
         """Initializes the environment"""
-        gym_config = self.Config()
-        # from IPython import embed;embed(using=False);raise SystemExit
+
+        if env_config.get("gym_config") is None:
+            self.gym_config = self.Config()
+        else:
+            self.gym_config = env_config["gym_config"]
         # TODO parameterize these in the gym config
 
         # Multiagent setup
-        self.agents = set({f"{AGENT_PREFIX}{i}" for i in range(gym_config.num_agents)})
+        self.agents = set({f"{AGENT_PREFIX}{i}" for i in range(self.gym_config.num_agents)})
         self._agent_ids = set(self.agents)
 
         self.terminateds = set()
         self.truncateds = set()
 
-        self.eval_mode = gym_config.eval_mode
-        self.sample_actions = gym_config.sample_actions
+        self.eval_mode = self.gym_config.eval_mode
+        self.sample_actions = self.gym_config.sample_actions
         if self.eval_mode:
             db_port = 5434
             chain_port = 10001
@@ -144,7 +147,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Define the rl agents
         self.rl_agents = {
             name: self.chain.init_agent(
-                base=gym_config.rl_agent_budget,
+                base=self.gym_config.rl_agent_budget,
                 eth=FixedPoint(100),
                 pool=self.interactive_hyperdrive,
                 name=name,
@@ -155,7 +158,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Define the random bots
         self.random_bots = [
             self.chain.init_agent(
-                base=gym_config.random_bot_budget,
+                base=self.gym_config.random_bot_budget,
                 eth=FixedPoint(100),
                 pool=self.interactive_hyperdrive,
                 policy=PolicyZoo.random,
@@ -165,13 +168,13 @@ class RayHyperdriveEnv(MultiAgentEnv):
                 policy_config=PolicyZoo.random.Config(rng_seed=i),
                 name="random_bot_" + str(i),
             )
-            for i in range(gym_config.num_random_bots)
+            for i in range(self.gym_config.num_random_bots)
         ]
 
         self.random_bots.extend(
             [
                 self.chain.init_agent(
-                    base=gym_config.random_bot_budget,
+                    base=self.gym_config.random_bot_budget,
                     eth=FixedPoint(100),
                     pool=self.interactive_hyperdrive,
                     policy=PolicyZoo.random_hold,
@@ -181,22 +184,19 @@ class RayHyperdriveEnv(MultiAgentEnv):
                         max_open_positions=1000,
                         # TODO omitting rng_seed results in the same random generators
                         # for all bots, fix
-                        rng_seed=gym_config.num_random_bots + i,
+                        rng_seed=self.gym_config.num_random_bots + i,
                     ),
                     name="random_hold_bot_" + str(i),
                 )
-                for i in range(gym_config.num_random_hold_bots)
+                for i in range(self.gym_config.num_random_hold_bots)
             ]
         )
 
         # Save a snapshot of initial conditions for resets
         self.chain.save_snapshot()
 
-        assert (
-            gym_config.render_mode is None
-            or gym_config.render_mode in self.metadata["render_modes"]
-        )
-        self.render_mode = gym_config.render_mode
+        assert self.gym_config.render_mode is None or self.gym_config.render_mode in self.metadata["render_modes"]
+        self.render_mode = self.gym_config.render_mode
 
         # The space of allowed actions to take
         # Following https://github.com/AminHP/gym-mtsim
@@ -234,9 +234,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
                     low=-1e2,
                     high=1e2,
                     dtype=np.float64,
-                    shape=(
-                        len(TradeTypes) * (gym_config.max_positions_per_type + 2) + 4,
-                    ),
+                    shape=(len(TradeTypes) * (self.gym_config.max_positions_per_type + 2) + 4,),
                 )
                 for agent_id in self.agents
             }
@@ -252,37 +250,25 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # LP: -> [volume, value]
         # Here, orders_i is a direct mapping to agent.wallet
         # Note normalize_time_to_maturity will always be 0 for LP positions
-        self.num_pool_features = len(gym_config.pool_info_columns)
+        self.num_pool_features = len(self.gym_config.pool_info_columns)
+        # Long and short features: token balance, pnl, time to maturity
+        self.num_long_features = self.gym_config.max_positions_per_type * 3
+        self.num_short_features = self.gym_config.max_positions_per_type * 3
+        # LP features: token balance, pnl
+        self.num_lp_features = 2
         inf = 1e10
         self._obs_space_in_preferred_format = True
+        # OS shape = # pool features + max positions per type x
+        self.observation_space_shape = (
+            self.num_pool_features + self.num_long_features + self.num_short_features + self.num_lp_features,
+        )
         self.observation_space = spaces.Dict(
             {
-                agent_id: spaces.Tuple(
-                    (
-                        # "pool_features":
-                        spaces.Box(
-                            low=-inf,
-                            high=inf,
-                            shape=(self.num_pool_features,),
-                            dtype=np.float64,
-                        ),
-                        # "long_orders":
-                        spaces.Box(
-                            low=-inf,
-                            high=inf,
-                            dtype=np.float64,
-                            shape=(gym_config.max_positions_per_type * 3,),
-                        ),
-                        # "short_orders":
-                        spaces.Box(
-                            low=-inf,
-                            high=inf,
-                            dtype=np.float64,
-                            shape=(gym_config.max_positions_per_type * 3,),
-                        ),
-                        # "lp_orders":
-                        spaces.Box(low=-inf, high=inf, dtype=np.float64, shape=(2,)),
-                    )
+                agent_id: spaces.Box(
+                    low=-inf,
+                    high=inf,
+                    shape=self.observation_space_shape,
+                    dtype=np.float64,
                 )
                 for agent_id in self.agents
             }
@@ -293,7 +279,6 @@ class RayHyperdriveEnv(MultiAgentEnv):
         self._step_count = 0
 
         self.logger = logging.getLogger()
-        self.gym_config = gym_config
         super().__init__()
 
     def reset(
@@ -349,9 +334,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # pylint: disable=too-many-statements
 
         long_short_actions = action[:-4]
-        long_short_actions = long_short_actions.reshape(
-            (len(TradeTypes), self.gym_config.max_positions_per_type + 2)
-        )
+        long_short_actions = long_short_actions.reshape((len(TradeTypes), self.gym_config.max_positions_per_type + 2))
         close_long_short_actions = long_short_actions[:, :-2]
         open_long_short_actions = long_short_actions[:, -2:]
         lp_actions = action[-4:]
@@ -376,9 +359,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # Closing trades
         for trade_type in TradeTypes:
-            close_orders_probability = expit(
-                close_long_short_actions[trade_type.value, :]
-            )
+            close_orders_probability = expit(close_long_short_actions[trade_type.value, :])
 
             # Handle closing orders
             # The index of orders here is from oldest to newest
@@ -386,26 +367,18 @@ class RayHyperdriveEnv(MultiAgentEnv):
             # the orders input feature, we can shuffle the order of closing orders and match them here
             if self.sample_actions:
                 random_roll = self.rng.uniform(0, 1, len(close_orders_probability))
-                orders_to_close_index = np.nonzero(
-                    random_roll <= close_orders_probability
-                )[0]
+                orders_to_close_index = np.nonzero(random_roll <= close_orders_probability)[0]
             else:
-                orders_to_close_index = np.nonzero(
-                    close_orders_probability > self.gym_config.close_threshold
-                )[0]
+                orders_to_close_index = np.nonzero(close_orders_probability > self.gym_config.close_threshold)[0]
 
             # TODO Close orders
-            trade_positions = agent_wallet[
-                agent_wallet["token_type"] == trade_type.name
-            ]
+            trade_positions = agent_wallet[agent_wallet["token_type"] == trade_type.name]
             # Ensure positions are sorted from oldest to newest
             trade_positions = trade_positions.sort_values("maturity_time")
             num_trade_positions = len(trade_positions)
 
             # Filter orders to close to be only the number of trade positions
-            orders_to_close_index = orders_to_close_index[
-                orders_to_close_index < num_trade_positions
-            ]
+            orders_to_close_index = orders_to_close_index[orders_to_close_index < num_trade_positions]
             positions_to_close = trade_positions.iloc[orders_to_close_index]
 
             # Close positions
@@ -431,25 +404,18 @@ class RayHyperdriveEnv(MultiAgentEnv):
         agent_wallet = self.rl_agents[agent_id].get_positions(coerce_float=False)
 
         # Open trades
-        min_tx_amount = (
-            self.interactive_hyperdrive.config.minimum_transaction_amount * 2
-        )
+        min_tx_amount = self.interactive_hyperdrive.config.minimum_transaction_amount * 2
         for trade_type in TradeTypes:
             # Only open trades if we haven't maxed out positions
-            trade_positions = agent_wallet[
-                agent_wallet["token_type"] == trade_type.name
-            ]
+            trade_positions = agent_wallet[agent_wallet["token_type"] == trade_type.name]
             num_trade_positions = len(trade_positions)
             if num_trade_positions < self.gym_config.max_positions_per_type:
-                new_order_probability = expit(
-                    open_long_short_actions[trade_type.value, 0]
-                )
+                new_order_probability = expit(open_long_short_actions[trade_type.value, 0])
                 # While volume isn't strictly a probability, we interpret it as a value between 0 and 1
                 # where 0 is no volume and 1 is max trade amount
                 volume_adjusted = (
                     min_tx_amount
-                    + FixedPoint(expit(open_long_short_actions[trade_type.value, 1]))
-                    * self.gym_config.max_trade_amount
+                    + FixedPoint(expit(open_long_short_actions[trade_type.value, 1])) * self.gym_config.max_trade_amount
                 )
 
                 # Opening orders
@@ -460,10 +426,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
                 if open_order:
                     # If the wallet has enough money
-                    if (
-                        volume_adjusted
-                        <= self.rl_agents[agent_id].get_wallet().balance.amount
-                    ):
+                    if volume_adjusted <= self.rl_agents[agent_id].get_wallet().balance.amount:
                         try:
                             if trade_type == TradeTypes.LONG:
                                 self.rl_agents[agent_id].open_long(base=volume_adjusted)
@@ -473,9 +436,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
                                 #    self.interactive_hyperdrive.interface.current_pool_state,
                                 # )
                                 # self.rl_bot.open_short(bonds=max_short)
-                                self.rl_agents[agent_id].open_short(
-                                    bonds=volume_adjusted
-                                )
+                                self.rl_agents[agent_id].open_short(bonds=volume_adjusted)
                         # Base exception here to catch rust errors
                         except BaseException as err:  # pylint: disable=broad-except
                             # TODO use logging here
@@ -487,15 +448,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         lp_actions_expit = expit(lp_actions)
         add_lp_probability = lp_actions_expit[0]
-        add_lp_volume = (
-            min_tx_amount
-            + FixedPoint(lp_actions_expit[1]) * self.gym_config.max_trade_amount
-        )
+        add_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[1]) * self.gym_config.max_trade_amount
         remove_lp_probability = lp_actions_expit[2]
-        remove_lp_volume = (
-            min_tx_amount
-            + FixedPoint(lp_actions_expit[3]) * self.gym_config.max_trade_amount
-        )
+        remove_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[3]) * self.gym_config.max_trade_amount
 
         if self.sample_actions:
             random_roll = self.rng.uniform(0, 1, 2)
@@ -508,17 +463,12 @@ class RayHyperdriveEnv(MultiAgentEnv):
         try:
             if add_lp:
                 self.rl_agents[agent_id].add_liquidity(add_lp_volume)
-            if (
-                remove_lp
-                and remove_lp_volume <= self.rl_agents[agent_id].get_wallet().lp_tokens
-            ):
+            if remove_lp and remove_lp_volume <= self.rl_agents[agent_id].get_wallet().lp_tokens:
                 self.rl_agents[agent_id].remove_liquidity(remove_lp_volume)
             # Always try and remove withdrawal shares
             if self.rl_agents[agent_id].get_wallet().withdraw_shares > 0:
                 # TODO error handling or check when withdrawal shares are not withdrawable
-                self.rl_agents[agent_id].redeem_withdrawal_share(
-                    self.rl_agents[agent_id].get_wallet().withdraw_shares
-                )
+                self.rl_agents[agent_id].redeem_withdrawal_share(self.rl_agents[agent_id].get_wallet().withdraw_shares)
         except Exception as err:  # pylint: disable=broad-except
             # TODO use logging here
             print(f"Warning: Failed to LP: {repr(err)}")
@@ -560,8 +510,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # TODO: _apply_action() is per agent_id, but _get_observations() is for all agents. Make this consistent?
         # TODO: Verify that truncated/terminated & self.truncateds/terminateds are being used correctly here
         truncateds = {
-            agent_id: self._apply_action(agent_id=agent_id, action=action)
-            for agent_id, action in action_dict.items()
+            agent_id: self._apply_action(agent_id=agent_id, action=action) for agent_id, action in action_dict.items()
         }
 
         # Run other bots
@@ -576,9 +525,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # We minimize time between bot making an action, so we advance time after actions have been made
         # but before the observation
-        self.chain.advance_time(
-            self.gym_config.step_advance_time, create_checkpoints=True
-        )
+        self.chain.advance_time(self.gym_config.step_advance_time, create_checkpoints=True)
 
         observations = self._get_observations()
         info = self._get_info()
@@ -604,41 +551,29 @@ class RayHyperdriveEnv(MultiAgentEnv):
     def _get_observations(self) -> dict[str, np.ndarray]:
         # Get the latest pool state feature from the db
         pool_state_df = self.interactive_hyperdrive.get_pool_info(coerce_float=True)
-        pool_state_df = (
-            pool_state_df[self.gym_config.pool_info_columns].iloc[-1].astype(float)
-        )
+        pool_state_df = pool_state_df[self.gym_config.pool_info_columns].iloc[-1].astype(float)
 
-        out_obs = {agent_id: {} for agent_id in self.agents}
+        out_obs = {}
         for agent_id in self.agents:
-            out_obs[agent_id]["pool_features"] = pool_state_df.values
+            pool_features = pool_state_df.values
 
             # TODO can also add other features, e.g., opening spot price
-            # Long Orders: trade type, order_i -> [volume, value, normalized_time_remaining]
-            # Short Orders: trade type, order_i -> [volume, value, normalized_time_remaining]
-            out_obs[agent_id]["long_orders"] = np.zeros(
-                self.gym_config.max_positions_per_type * 3
-            )
-            out_obs[agent_id]["short_orders"] = np.zeros(
-                self.gym_config.max_positions_per_type * 3
-            )
+            # Long Features: trade type, order_i -> [volume, value, normalized_time_remaining]
+            long_features = np.zeros(self.num_long_features)
+            # Short Features: trade type, order_i -> [volume, value, normalized_time_remaining]
+            short_features = np.zeros(self.num_short_features)
             # LP: -> [volume, value]
-            out_obs[agent_id]["lp_orders"] = np.zeros(2)
+            lp_features = np.zeros(self.num_lp_features)
 
             # Observation data uses floats
-            agent_wallet = self.rl_agents[agent_id].get_positions(
-                coerce_float=True, calc_pnl=True
-            )
+            agent_wallet = self.rl_agents[agent_id].get_positions(coerce_float=True, calc_pnl=True)
 
             if not agent_wallet.empty:
                 position_duration = self.interactive_hyperdrive.config.position_duration
                 # We convert timestamp to epoch time here
                 # We keep negative values for time past maturity
-                current_block = (
-                    self.interactive_hyperdrive.interface.get_current_block()
-                )
-                timestamp = self.interactive_hyperdrive.interface.get_block_timestamp(
-                    current_block
-                )
+                current_block = self.interactive_hyperdrive.interface.get_current_block()
+                timestamp = self.interactive_hyperdrive.interface.get_block_timestamp(current_block)
                 agent_wallet["normalized_time_remaining"] = (
                     agent_wallet["maturity_time"] - timestamp
                 ) / position_duration
@@ -646,26 +581,30 @@ class RayHyperdriveEnv(MultiAgentEnv):
                 long_orders = agent_wallet[agent_wallet["token_id"] == "LONG"]
                 # Ensure data is the same as the action space
                 long_orders = long_orders.sort_values("maturity_time")
-                long_orders = long_orders[
-                    ["token_balance", "pnl", "normalized_time_remaining"]
-                ].values.flatten()
+                long_orders = long_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
 
                 short_orders = agent_wallet[agent_wallet["token_type"] == "LONG"]
                 # Ensure data is the same as the action space
                 short_orders = short_orders.sort_values("maturity_time")
-                short_orders = short_orders[
-                    ["token_balance", "pnl", "normalized_time_remaining"]
-                ].values.flatten()
+                short_orders = short_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
 
                 lp_orders = agent_wallet[agent_wallet["token_type"] == "LP"]
                 lp_orders = lp_orders[["token_balance", "pnl"]].values.flatten()
 
                 # Add data to static size arrays
-                out_obs[agent_id]["long_orders"][: len(long_orders)] = long_orders
-                out_obs[agent_id]["short_orders"][: len(short_orders)] = short_orders
-                out_obs[agent_id]["lp_orders"][: len(lp_orders)] = lp_orders
+                long_features[: len(long_orders)] = long_orders
+                short_features[: len(short_orders)] = short_orders
+                lp_features[: len(lp_orders)] = lp_orders
 
-        # Sanity check
+            out_obs[agent_id] = np.concatenate(
+                [
+                    pool_features,
+                    long_features,
+                    short_features,
+                    lp_features,
+                ]
+            )
+
         return out_obs
 
     def _calculate_rewards(self) -> float:
@@ -677,9 +616,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         reward = {}
         for agent_id in self.agents:
             # Filter by agent ID
-            agent_wallet = current_wallet[
-                current_wallet["wallet_address"] == self.rl_agents[agent_id].address
-            ]
+            agent_wallet = current_wallet[current_wallet["wallet_address"] == self.rl_agents[agent_id].address]
             # The agent_wallet shows the pnl of all positions
             # Sum across all positions
             # TODO one option here is to only look at base positions instead of sum across all positions.
@@ -698,3 +635,6 @@ class RayHyperdriveEnv(MultiAgentEnv):
     def render(self) -> None:
         """Renders the environment. No rendering available for hyperdrive env."""
         return None
+
+    def __del__(self) -> None:
+        self.chain.cleanup()

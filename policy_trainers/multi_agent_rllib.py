@@ -10,6 +10,7 @@ from ray.rllib.utils.test_utils import (
     add_rllib_example_script_args,
     run_rllib_example_script_experiment,
 )
+from ray.tune.logger import pretty_print
 from ray.tune.registry import get_trainable_cls
 
 # from stable_baselines3 import PPO
@@ -19,11 +20,12 @@ from ray.tune.registry import get_trainable_cls
 
 # Import registers hyperdrive envs
 # from agent0.traiderdaive import FullHyperdriveEnv
-from gym_environments.ray_hyperdrive_env import RayHyperdriveEnv
+from gym_environments.ray_hyperdrive_env import RayHyperdriveEnv, POLICY_PREFIX
 
 # Policy params listed in /ray/rllib/models/catalog.py
 model_params = {"uses_new_env_runners": True, "vf_share_layers": False}
 # PPO params listed in /ray/rllib/algorithms/ppo/ppo.py
+# TODO: Should this be in RayHyperdriveEnv.Config?
 ppo_params = {
     # MDP discount factor TODO: Is this used in PPO?
     "gamma": 0.99,
@@ -48,7 +50,7 @@ ppo_params = {
     # Mini batch of train batch
     "mini_batch_size_per_learner": None,
     # Number of update iterations per train batch (num epochs)
-    "num_sgd_iter": 30,
+    "num_sgd_iter": 10,
     # Shuffle sequences in the train batch
     "shuffle_sequences": True,
     # Value function loss coefficient
@@ -71,35 +73,41 @@ ppo_params = {
 def run_train():
     """Runs training to generate a RL model."""
     # TODO parameterize these variables
-    # gym_config = RayHyperdriveEnv.Config()
-    # env = gym.make(id="traiderdaive/full_hyperdrive_env", gym_config=gym_config)
+    # TODO Does the env need to be registered with ray?
+    # TODO Setup monitoring and saving checkpoints
+    gym_config = RayHyperdriveEnv.Config()
     # env.chain.run_dashboard()
-    # env = Monitor(env, log_dir)
+    policies = [POLICY_PREFIX + str(i) for i in range(gym_config.num_agents)]
 
     # TODO: Make all of init() params explicit
     ray.init(local_mode=True)  # Use local_mode=True for debugging
     config = (
         ppo.PPOConfig()
         # .environment(env=RayHyperdriveEnv, env_config=asdict(gym_config))
-        .environment(env=RayHyperdriveEnv)
+        # TODO: Not sure about the best way to pass config to env
+        .environment(env=RayHyperdriveEnv, env_config={"gym_config": gym_config})
         .api_stack(
             enable_rl_module_and_learner=True, enable_env_runner_and_connector_v2=True
         )
-        .env_runners(num_env_runners=2)
+        .env_runners(num_env_runners=2, num_envs_per_env_runner=1)
         .resources(num_cpus_for_main_process=1)
-        .learners(num_learners=0, num_gpus_per_learner=0)
+        .learners(num_learners=0, num_gpus_per_learner=0, num_cpus_per_learner=1)
         .training(**ppo_params)
         .multi_agent(
-            policies={"policy0", "policy1"},
+            policies=set(policies),
             # Simple mapping fn, mapping agent0 to main0 and agent1 to main1.
             policy_mapping_fn=(
-                lambda agent_id, episode, **kwargs: f"policy{agent_id[-1]}"
+                lambda agent_id, episode, **kwargs: f"{POLICY_PREFIX}{agent_id[-1]}"
             ),
-            policies_to_train=["policy0", "policy1"],
+            policies_to_train=policies,
         )
     )
     algo = config.build()
-    # algo.train()
+    for i in range(2):
+        print(f"Training iteration {i}...")
+        result = algo.train()
+        print(pretty_print(result))
+
     ray.shutdown()
 
 
