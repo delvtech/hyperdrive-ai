@@ -94,7 +94,7 @@ if __name__ == "__main__":
             pending_block = s_chain._web3.eth.get_block("pending", full_transactions=True)
             assert "transactions" in pending_block
             num_pending_txns = len(pending_block["transactions"])
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
         # We call `anvil_mine` to manually mine a block
         s_chain._web3.provider.make_request(method=RPCEndpoint("anvil_mine"), params=[])
