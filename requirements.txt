@@ -1,4 +1,7 @@
 # This is doing an editable install on the relative path
+# TODO move these into pyproject.toml as requirements
+# This will require not doing a local install of agent0
+-e .
 -e ../agent0[all]
 gymnasium
 scipy

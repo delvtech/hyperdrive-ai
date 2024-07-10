@@ -6,7 +6,7 @@ import gymnasium as gym
 from stable_baselines3 import A2C
 from stable_baselines3.common.monitor import Monitor
 
-from agent0.traiderdaive import SimpleHyperdriveEnv
+from traiderdaive import SimpleHyperdriveEnv
 
 
 def run_eval():
@@ -16,7 +16,7 @@ def run_eval():
     os.makedirs(log_dir, exist_ok=True)
 
     gym_config = SimpleHyperdriveEnv.Config()
-    env = gym.make("traiderdaive/simple_hyperdrive_env", gym_config=gym_config)
+    env = gym.make("traiderdaive/gym_simple_hyperdrive_env", gym_config=gym_config)
     env = Monitor(env, log_dir)
 
     model = A2C.load(log_dir + "/best_model.zip", device="cpu")
