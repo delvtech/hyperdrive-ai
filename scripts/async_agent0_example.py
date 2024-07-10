@@ -84,15 +84,17 @@ if __name__ == "__main__":
 
         # Manually mine the block on the server side
         # NOTE We need to ensure the trades get submitted before we mine the block,
-        # otherwise there may be deadlock
-        # (i.e., we mine first, then transactions gets submitted,
+        # otherwise there may be deadlock (i.e., we mine first, then transactions gets submitted,
         # and background tasks gets stuck waiting for block to mine.)
-        # TODO we achieve this by sleeping for now, there's probably a better way to do this,
-        # e.g., ensuring the transactions are on the pending block.
-        # NOTE this sleep must be asyncio sleep to give control to threads to submit the trades.
-        # `time.sleep` doesn't work here. In general, there's some strict order of operations here
-        # that gets complicated, likely due to the GIL.
-        await asyncio.sleep(1)
+        # We achieve this by looking at the number of transactions on the `pending` block,
+        # and give background threads control (by calling `asyncio.sleep`) when not all expected transactions
+        # are submitted.
+        num_pending_txns = 0
+        while num_pending_txns < len(c_agents):
+            pending_block = s_chain._web3.eth.get_block("pending", full_transactions=True)
+            assert "transactions" in pending_block
+            num_pending_txns = len(pending_block["transactions"])
+            await asyncio.sleep(0.1)
 
         # We call `anvil_mine` to manually mine a block
         s_chain._web3.provider.make_request(method=RPCEndpoint("anvil_mine"), params=[])
