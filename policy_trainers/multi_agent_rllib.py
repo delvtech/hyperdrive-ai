@@ -10,7 +10,6 @@ from ray.tune.logger import pretty_print
 from ray.tune.registry import get_trainable_cls
 
 # Import registers hyperdrive envs
-# from agent0.traiderdaive import FullHyperdriveEnv
 from traiderdaive.ray_environments.ray_hyperdrive_env import POLICY_PREFIX, RayHyperdriveEnv
 
 # from stable_baselines3 import PPO
