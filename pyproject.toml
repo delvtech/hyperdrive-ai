@@ -1,12 +1,12 @@
 [project]
-name = "hyperdrive-ai"
+name = "traiderdaive"
 version = "0"
 # Authors are the current, primary stewards of the repo
 # contributors can be found on github
 authors = [
     { name = "Dylan Paiton", email = "dylan@delv.tech" },
     { name = "Sheng Lundquist", email = "sheng@delv.tech" },
-    { name = "Will Shainin", email = "TODO" },
+    { name = "Will Shainin", email = "wshainin@gmail.com" },
 ]
 description = "AI using agent0"
 readme = "README.md"
@@ -18,6 +18,10 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Natural Language :: English",
 ]
+
+[build-system]
+requires = ["flit_core>=3.2"]
+build-backend = "flit_core.buildapi"
 
 [tool.pylint.format]
 max-line-length = "120"
