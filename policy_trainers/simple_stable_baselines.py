@@ -9,7 +9,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.monitor import Monitor, load_results
 from stable_baselines3.common.results_plotter import ts2xy
 
-from agent0.traiderdaive import SimpleHyperdriveEnv
+from traiderdaive import SimpleHyperdriveEnv
 
 # Stable baselines repo: https://github.com/DLR-RM/stable-baselines3
 # The limiting factors of what algorithms you can use depend on the action space
@@ -84,7 +84,7 @@ def run_train():
     os.makedirs(log_dir, exist_ok=True)
 
     gym_config = SimpleHyperdriveEnv.Config()
-    env = gym.make("traiderdaive/simple_hyperdrive_env", gym_config=gym_config)
+    env = gym.make("traiderdaive/gym_simple_hyperdrive_env", gym_config=gym_config)
 
     env = Monitor(env, log_dir)
 

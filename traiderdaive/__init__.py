@@ -2,20 +2,20 @@
 
 from gymnasium.envs.registration import register
 
-from .gym_environments.gym_full_hypedrive_env import FullHyperdriveEnv
+from .gym_environments.gym_full_hyperdrive_env import FullHyperdriveEnv
 from .gym_environments.gym_simple_hyperdrive_env import SimpleHyperdriveEnv
 
 # TODO expose ray environments when ready
 
 # Register hyperdrive envs to gym
 register(
-    id="traiderdaive/simple_hyperdrive_env",
-    entry_point="traiderdaive.gym_environments.simple_hyperdrive_env:SimpleHyperdriveEnv",
+    id="traiderdaive/gym_simple_hyperdrive_env",
+    entry_point="traiderdaive:SimpleHyperdriveEnv",
     max_episode_steps=1000,
 )
 
 register(
-    id="traiderdaive/full_hyperdrive_env",
-    entry_point="traiderdaive.gym_environments.full_hyperdrive_env:FullHyperdriveEnv",
+    id="traiderdaive/gym_full_hyperdrive_env",
+    entry_point="traiderdaive:FullHyperdriveEnv",
     max_episode_steps=1000,
 )

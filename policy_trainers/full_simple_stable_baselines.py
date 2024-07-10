@@ -10,7 +10,7 @@ from stable_baselines3.common.monitor import Monitor, load_results
 from stable_baselines3.common.results_plotter import ts2xy
 
 # Import registers hyperdrive envs
-from agent0.traiderdaive import FullHyperdriveEnv
+from traiderdaive import FullHyperdriveEnv
 
 # Stable baselines repo: https://github.com/DLR-RM/stable-baselines3
 # The limiting factors of what algorithms you can use depend on the action space
@@ -85,7 +85,7 @@ def run_train():
     os.makedirs(log_dir, exist_ok=True)
 
     gym_config = FullHyperdriveEnv.Config()
-    env = gym.make(id="traiderdaive/full_hyperdrive_env", gym_config=gym_config)
+    env = gym.make(id="traiderdaive/gym_full_hyperdrive_env", gym_config=gym_config)
     env.chain.run_dashboard()
 
     env = Monitor(env, log_dir)
@@ -97,29 +97,29 @@ def run_train():
     model = PPO(
         policy="MultiInputPolicy",
         env=env,
-        learning_rate = 3e-4,
-        n_steps = 200,
-        batch_size = 64,
-        n_epochs = 10,
-        gamma = 0.99,
-        gae_lambda = 0.95,
-        clip_range = 0.2,
-        clip_range_vf = None,
-        normalize_advantage = True,
-        ent_coef = 0.0,
-        vf_coef = 0.5,
-        max_grad_norm = 0.5,
-        use_sde = False,
-        sde_sample_freq = -1,
-        rollout_buffer_class = None,
-        rollout_buffer_kwargs = None,
-        target_kl = None,
-        stats_window_size = 100,
-        tensorboard_log = None,
-        policy_kwargs = None,
-        verbose = 1,
-        seed = None,
-        device = "auto",
+        learning_rate=3e-4,
+        n_steps=200,
+        batch_size=64,
+        n_epochs=10,
+        gamma=0.99,
+        gae_lambda=0.95,
+        clip_range=0.2,
+        clip_range_vf=None,
+        normalize_advantage=True,
+        ent_coef=0.0,
+        vf_coef=0.5,
+        max_grad_norm=0.5,
+        use_sde=False,
+        sde_sample_freq=-1,
+        rollout_buffer_class=None,
+        rollout_buffer_kwargs=None,
+        target_kl=None,
+        stats_window_size=100,
+        tensorboard_log=None,
+        policy_kwargs=None,
+        verbose=1,
+        seed=None,
+        device="auto",
     )
 
     model.learn(total_timesteps=100000, callback=callback)
