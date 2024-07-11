@@ -2,6 +2,7 @@
 
 from gymnasium.envs.registration import register
 
+from .gym_environments.gym_async_full_hyperdrive_env import AsyncFullHyperdriveEnv
 from .gym_environments.gym_full_hyperdrive_env import FullHyperdriveEnv
 from .gym_environments.gym_simple_hyperdrive_env import SimpleHyperdriveEnv
 
@@ -17,5 +18,11 @@ register(
 register(
     id="traiderdaive/gym_full_hyperdrive_env",
     entry_point="traiderdaive:FullHyperdriveEnv",
+    max_episode_steps=1000,
+)
+
+register(
+    id="traiderdaive/gym_async_full_hyperdrive_env",
+    entry_point="traiderdaive:AsyncFullHyperdriveEnv",
     max_episode_steps=1000,
 )
