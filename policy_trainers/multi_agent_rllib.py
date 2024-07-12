@@ -1,24 +1,16 @@
-"""Simple stable baselines policy trainer"""
+"""Multi agent rllib policy trainer"""
 
 import os
 
-import gymnasium as gym
 import ray
-from ray.rllib.algorithms import ppo
-from ray.rllib.utils.test_utils import add_rllib_example_script_args, run_rllib_example_script_experiment
-from ray.tune.logger import pretty_print
-from ray.tune.registry import get_trainable_cls
 
-# Import registers hyperdrive envs
+from ray.rllib.algorithms import ppo
+from ray.tune.logger import pretty_print
+
 from traiderdaive.ray_environments.ray_hyperdrive_env import POLICY_PREFIX, RayHyperdriveEnv
 
-# from stable_baselines3 import PPO
-# from stable_baselines3.common.callbacks import BaseCallback
-# from stable_baselines3.common.monitor import Monitor, load_results
-# from stable_baselines3.common.results_plotter import ts2xy
-
-
 # Policy params listed in /ray/rllib/models/catalog.py
+# TODO: vf_share_layers: Should actor and critic share layers? https://arxiv.org/abs/2006.05990
 model_params = {"uses_new_env_runners": True, "vf_share_layers": False}
 # PPO params listed in /ray/rllib/algorithms/ppo/ppo.py
 # TODO: Should this be in RayHyperdriveEnv.Config?
@@ -30,23 +22,23 @@ ppo_params = {
     # Learning rate
     "lr": 5e-5,
     # Batch size per worker: total batch size = `num_learners` x `train_batch_size_per_learner`
-    "train_batch_size_per_learner": None,
+    "train_batch_size_per_learner": 10,
+    # Mini batch of train batch
+    "mini_batch_size_per_learner": 10,
+    # Number of update iterations per train batch (num epochs)
+    "num_sgd_iter": 10,
     # Use critic as baseline (Required for using GAE)
     "use_critic": True,
     # Use Generalized Advantage Estimator
     "use_gae": True,
     # GAE lambda parameter
-    "lambda_": 1.0,
+    "lambda_": 0.95,
     # Use KL term in loss function
     "use_kl_loss": True,
     # Initial coefficient for KL divergence
     "kl_coeff": 0.2,
     # Target value for KL divergence
     "kl_target": 0.01,
-    # Mini batch of train batch
-    "mini_batch_size_per_learner": None,
-    # Number of update iterations per train batch (num epochs)
-    "num_sgd_iter": 10,
     # Shuffle sequences in the train batch
     "shuffle_sequences": True,
     # Value function loss coefficient
@@ -70,6 +62,7 @@ def run_train():
     """Runs training to generate a RL model."""
     # TODO parameterize these variables
     # TODO Does the env need to be registered with ray?
+    # TODO Why does Ray add an env runner to num_env_runners? How is this used?
     # TODO Setup monitoring and saving checkpoints
     gym_config = RayHyperdriveEnv.Config()
     # env.chain.run_dashboard()
@@ -89,7 +82,7 @@ def run_train():
         .training(**ppo_params)
         .multi_agent(
             policies=set(policies),
-            # Simple mapping fn, mapping agent0 to main0 and agent1 to main1.
+            # Simple mapping fn, mapping agent0 to policy0
             policy_mapping_fn=(lambda agent_id, episode, **kwargs: f"{POLICY_PREFIX}{agent_id[-1]}"),
             policies_to_train=policies,
         )
