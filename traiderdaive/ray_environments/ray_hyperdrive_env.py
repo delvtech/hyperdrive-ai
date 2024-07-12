@@ -579,12 +579,12 @@ class RayHyperdriveEnv(MultiAgentEnv):
                     agent_wallet["maturity_time"] - timestamp
                 ) / position_duration
 
-                long_orders = agent_wallet[agent_wallet["token_id"] == "LONG"]
+                long_orders = agent_wallet[agent_wallet["token_type"] == "LONG"]
                 # Ensure data is the same as the action space
                 long_orders = long_orders.sort_values("maturity_time")
                 long_orders = long_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
 
-                short_orders = agent_wallet[agent_wallet["token_type"] == "LONG"]
+                short_orders = agent_wallet[agent_wallet["token_type"] == "SHORT"]
                 # Ensure data is the same as the action space
                 short_orders = short_orders.sort_values("maturity_time")
                 short_orders = short_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
