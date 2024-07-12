@@ -107,6 +107,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         env_config,
     ):
         """Initializes the environment"""
+        self.worker_index = env_config.worker_index
 
         if env_config.get("gym_config") is None:
             self.gym_config = self.Config()
@@ -127,8 +128,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
             db_port = 5434
             chain_port = 10001
         else:
-            db_port = 5435
-            chain_port = 10002
+            db_port = 5435 + self.worker_index
+            chain_port = 10002 + self.worker_index
 
         local_chain_config = LocalChain.Config(
             block_timestamp_interval=12,
@@ -578,12 +579,12 @@ class RayHyperdriveEnv(MultiAgentEnv):
                     agent_wallet["maturity_time"] - timestamp
                 ) / position_duration
 
-                long_orders = agent_wallet[agent_wallet["token_id"] == "LONG"]
+                long_orders = agent_wallet[agent_wallet["token_type"] == "LONG"]
                 # Ensure data is the same as the action space
                 long_orders = long_orders.sort_values("maturity_time")
                 long_orders = long_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
 
-                short_orders = agent_wallet[agent_wallet["token_type"] == "LONG"]
+                short_orders = agent_wallet[agent_wallet["token_type"] == "SHORT"]
                 # Ensure data is the same as the action space
                 short_orders = short_orders.sort_values("maturity_time")
                 short_orders = short_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
