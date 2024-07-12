@@ -20,37 +20,37 @@ if __name__ == "__main__":
     # Launch a local chain object with hyperdrive deployed
 
     # To avoid race conditions in the db, we manually sync the db
-    server_chain = LocalChain(config=LocalChain.Config(manual_database_sync=True))
-    server_pool = LocalHyperdrive(config=LocalHyperdrive.Config(), chain=server_chain)
+    chain = LocalChain(config=LocalChain.Config(manual_database_sync=True))
+    pool = LocalHyperdrive(config=LocalHyperdrive.Config(), chain=chain)
 
     # Generate funded agents with private keys on the server
     # NOTE: this can also be done on the remote chain side
     agent_pks = [make_private_key() for _ in range(5)]
 
-    server_agents = [
-        server_chain.init_agent(
+    agents = [
+        chain.init_agent(
             private_key=pk,
             base=FixedPoint(1_000_000),
             eth=FixedPoint(100),
-            pool=server_pool,
+            pool=pool,
         )
         for pk in agent_pks
     ]
 
     # We explicitly set max approval here, as we won't be making any trades
     # with these agents on the local chain side (which automatically sets approval)
-    _ = [agent.set_max_approval(pool=server_pool) for agent in server_agents]
+    _ = [agent.set_max_approval(pool=pool) for agent in agents]
 
     # After initialization, we set the chain to be manual mine mode
-    server_chain._web3.provider.make_request(method=RPCEndpoint("evm_setAutomine"), params=[False])
+    chain._web3.provider.make_request(method=RPCEndpoint("evm_setAutomine"), params=[False])
 
     ### Make async trades
     # Need async function definition for running the background tasks
-    async def run_trades(agents: list[LocalHyperdriveAgent], chain: LocalChain) -> Sequence[BaseHyperdriveEvent]:
+    async def run_trades(_agents: list[LocalHyperdriveAgent], _chain: LocalChain) -> Sequence[BaseHyperdriveEvent]:
         # Make trades on the client side asynchronously via threads
         # NOTE we need to do threads here because underlying functions use blocking waits
         background_tasks = asyncio.gather(
-            *[asyncio.to_thread(agent.add_liquidity, base=FixedPoint(1_000)) for agent in agents]
+            *[asyncio.to_thread(agent.add_liquidity, base=FixedPoint(1_000)) for agent in _agents]
         )
 
         # Manually mine the block on the server side
@@ -61,12 +61,12 @@ if __name__ == "__main__":
         # and give background threads control (by calling `asyncio.sleep`) when not all expected transactions
         # are submitted.
         num_pending_txns = 0
-        while num_pending_txns < len(agents):
-            num_pending_txns = chain._web3.eth.get_block_transaction_count("pending")
+        while num_pending_txns < len(_agents):
+            num_pending_txns = _chain._web3.eth.get_block_transaction_count("pending")
             await asyncio.sleep(0.5)
 
         # We call `anvil_mine` to manually mine a block
-        chain._web3.provider.make_request(method=RPCEndpoint("anvil_mine"), params=[])
+        _chain._web3.provider.make_request(method=RPCEndpoint("anvil_mine"), params=[])
 
         # NOTE we can also use a single advance time here to mine the block instead of the above
         # NOTE we can't create checkpoints here, because the server is running in
@@ -79,13 +79,13 @@ if __name__ == "__main__":
 
         return out
 
-    out_events = asyncio.run(run_trades(agents=server_agents, chain=server_chain))
+    out_events = asyncio.run(run_trades(agents, chain))
 
     # We manually sync the db here after trades go through
-    server_pool.sync_database()
+    pool.sync_database()
 
     # View trades
-    events = server_pool.get_trade_events()
+    events = pool.get_trade_events()
 
     # All trades happen on the same block.
     print(events)
