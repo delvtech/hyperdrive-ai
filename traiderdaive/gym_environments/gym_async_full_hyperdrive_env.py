@@ -550,25 +550,31 @@ class AsyncFullHyperdriveEnv(gym.Env):
         """
 
         truncated = False
-        rl_bot_actions = self._get_rl_actions(action)
+        rl_bot_action_funcs = self._get_rl_actions(action)
 
         # Run other bots
         # Suppress logging here
 
-        random_bot_actions: list[partial] = []
+        random_bot_action_funcs: list[partial] = []
+        random_bot_expected_txns = 0
         for random_bot in self.random_bots:
-            # TODO we don't know how many transactions the random bot will make.
-            # Need to split up querying policy for actions and executing them
-            random_bot_actions.append(partial(random_bot.execute_policy_action))
+            random_bot_actions = random_bot.get_policy_action()
+            random_bot_expected_txns += len(random_bot_actions)
+            random_bot_action_funcs.append(partial(random_bot.execute_action, random_bot_actions))
 
         # Execute all bot actions async
-        action_events_or_exceptions = asyncio.run(self._async_execute_actions(rl_bot_actions + random_bot_actions))
+        action_events_or_exceptions = asyncio.run(
+            self._async_execute_actions(
+                rl_bot_action_funcs + random_bot_action_funcs,
+                num_expected_txns=len(rl_bot_action_funcs) + random_bot_expected_txns,
+            )
+        )
 
         # Error check actions here
         for i, result in enumerate(action_events_or_exceptions):
             if isinstance(result, BaseException):
                 # If the action came from the rlbot, we set the truncated flag
-                if i < len(rl_bot_actions):
+                if i < len(rl_bot_action_funcs):
                     print(f"RL bot threw an exception, truncating episode: {repr(result)}")
                     truncated = True
                 # If the action came from random bots, we print a warning and ignore
@@ -603,7 +609,7 @@ class AsyncFullHyperdriveEnv(gym.Env):
         return observation, step_reward, terminated, truncated, info
 
     async def _async_execute_actions(
-        self, action_funcs: list[partial]
+        self, action_funcs: list[partial], num_expected_txns: int
     ) -> Sequence[BaseHyperdriveEvent | BaseException]:
         background_tasks = asyncio.gather(
             *[asyncio.to_thread(func) for func in action_funcs],
@@ -620,7 +626,6 @@ class AsyncFullHyperdriveEnv(gym.Env):
         num_pending_txns = 0
         # TODO get the number of expected transactions from caller
         # This isn't going to reach the expected txns because random bots can refuse to make a trade
-        num_expected_txns = len(action_funcs)
         for _ in range(WAIT_TXNS_MAX_ITERATIONS):
             pending_block = self.server_chain._web3.eth.get_block("pending", full_transactions=True)
             assert "transactions" in pending_block
