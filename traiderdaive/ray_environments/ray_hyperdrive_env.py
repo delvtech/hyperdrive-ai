@@ -107,6 +107,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         env_config,
     ):
         """Initializes the environment"""
+        self.worker_index = env_config.worker_index
 
         if env_config.get("gym_config") is None:
             self.gym_config = self.Config()
@@ -127,8 +128,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
             db_port = 5434
             chain_port = 10001
         else:
-            db_port = 5435
-            chain_port = 10002
+            db_port = 5435 + self.worker_index
+            chain_port = 10002 + self.worker_index
 
         local_chain_config = LocalChain.Config(
             block_timestamp_interval=12,
