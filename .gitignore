@@ -10,3 +10,7 @@
 **/.traider_models
 
 __pycache__
+
+.crash_report
+
+.vscode
