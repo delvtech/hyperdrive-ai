@@ -53,7 +53,10 @@ class RayHyperdriveEnv(MultiAgentEnv):
         max_positions_per_type: int = 10
         base_reward_scale: float = 0.0
         position_reward_scale: float = 1
+        # Number of RayHyperdriveEnv steps per episode
         episode_length: int = 200
+        # Number of total training steps where one step is (num_learners x train_batch_size_per_learner) env steps
+        num_training_steps: int = 500
         # The threshold for the probability of opening and closing orders
         open_threshold: float = 0.5
         close_threshold: float = 0.5

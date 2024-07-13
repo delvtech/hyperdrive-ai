@@ -3,11 +3,10 @@
 import os
 
 import ray
-
-from ray.rllib.algorithms import ppo
+from ray.rllib.algorithms.ppo import PPOConfig
 from ray.tune.logger import pretty_print
 
-from traiderdaive.ray_environments.ray_hyperdrive_env import POLICY_PREFIX, RayHyperdriveEnv
+from traiderdaive.ray_environments.ray_hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX, RayHyperdriveEnv
 
 # Policy params listed in /ray/rllib/models/catalog.py
 # TODO: vf_share_layers: Should actor and critic share layers? https://arxiv.org/abs/2006.05990
@@ -64,6 +63,7 @@ def run_train():
     # TODO Does the env need to be registered with ray?
     # TODO Why does Ray add an env runner to num_env_runners? How is this used?
     # TODO Setup monitoring and saving checkpoints
+    # TODO Use ray train/tune?
     gym_config = RayHyperdriveEnv.Config()
     # env.chain.run_dashboard()
     policies = [POLICY_PREFIX + str(i) for i in range(gym_config.num_agents)]
@@ -71,7 +71,7 @@ def run_train():
     # TODO: Make all of init() params explicit
     ray.init(local_mode=True)  # Use local_mode=True for debugging
     config = (
-        ppo.PPOConfig()
+        PPOConfig()
         # .environment(env=RayHyperdriveEnv, env_config=asdict(gym_config))
         # TODO: Not sure about the best way to pass config to env
         .environment(env=RayHyperdriveEnv, env_config={"gym_config": gym_config})
@@ -82,13 +82,13 @@ def run_train():
         .training(**ppo_params)
         .multi_agent(
             policies=set(policies),
-            # Simple mapping fn, mapping agent0 to policy0
-            policy_mapping_fn=(lambda agent_id, episode, **kwargs: f"{POLICY_PREFIX}{agent_id[-1]}"),
+            # Mapping agent0 to policy0, etc.
+            policy_mapping_fn=(lambda agent_id, episode, **kwargs: f"{POLICY_PREFIX}{agent_id.lstrip(AGENT_PREFIX)}"),
             policies_to_train=policies,
         )
     )
     algo = config.build()
-    for i in range(2):
+    for i in range(gym_config.num_training_steps):
         print(f"Training iteration {i}...")
         result = algo.train()
         print(pretty_print(result))
