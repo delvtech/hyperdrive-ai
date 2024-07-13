@@ -23,18 +23,13 @@ if __name__ == "__main__":
     chain = LocalChain(config=LocalChain.Config(manual_database_sync=True))
     pool = LocalHyperdrive(config=LocalHyperdrive.Config(), chain=chain)
 
-    # Generate funded agents with private keys on the server
-    # NOTE: this can also be done on the remote chain side
-    agent_pks = [make_private_key() for _ in range(5)]
-
     agents = [
         chain.init_agent(
-            private_key=pk,
             base=FixedPoint(1_000_000),
             eth=FixedPoint(100),
             pool=pool,
         )
-        for pk in agent_pks
+        for _ in range(5)
     ]
 
     # We explicitly set max approval here, as we won't be making any trades

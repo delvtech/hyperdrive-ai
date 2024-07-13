@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Sequence
 
 import gymnasium as gym
 import numpy as np
-from agent0 import Chain, Hyperdrive, LocalChain, LocalHyperdrive, PolicyZoo
+from agent0 import LocalChain, LocalHyperdrive, PolicyZoo
 from agent0.core.base.make_key import make_private_key
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
@@ -22,8 +22,6 @@ from web3.types import RPCEndpoint
 
 if TYPE_CHECKING:
     from agent0.ethpy.hyperdrive.event_types import BaseHyperdriveEvent
-
-WAIT_TXNS_MAX_ITERATIONS = 10
 
 # Global suppression of warnings, TODO fix
 warnings.filterwarnings("ignore")
@@ -122,68 +120,30 @@ class AsyncFullHyperdriveEnv(gym.Env):
             chain_port = 10002
 
         local_chain_config = LocalChain.Config(
-            block_timestamp_interval=12, db_port=db_port, chain_port=chain_port, calc_pnl=False
+            block_timestamp_interval=12,
+            db_port=db_port,
+            chain_port=chain_port,
+            calc_pnl=False,
+            manual_database_sync=True,
         )
 
         initial_pool_config = LocalHyperdrive.Config()
-        self.server_chain = LocalChain(local_chain_config)
-        self.server_pool = LocalHyperdrive(self.server_chain, initial_pool_config)
-
-        # number of agents is the number of random agents + 1 for the rl bot itself
-        self.num_agents = gym_config.num_random_bots + gym_config.num_random_hold_bots + 1
-
-        # Generate private keys for all agents
-        agent_pks = [make_private_key() for _ in range(self.num_agents)]
-
-        # Initialize, fund, and approve agents on the server side
-        # We use the first agent as the RL bot, and the rest as random bots
-        server_agents = [
-            self.server_chain.init_agent(
-                private_key=pk,
-                base=gym_config.rl_agent_budget if i == 0 else gym_config.random_bot_budget,
-                eth=FixedPoint(100),
-                pool=self.server_pool,
-            )
-            for i, pk in enumerate(agent_pks)
-        ]
-
-        # We explicitly set max approval here, as we won't be making any trades
-        # with these agents on the local chain side (which automatically sets approval)
-        _ = [agent.set_max_approval(pool=self.server_pool) for agent in server_agents]
-
-        # Launch a client chain and pool connecting to the server
-        # We connect the client chain to the server chain's db
-        postgres_config = asdict(self.server_chain.postgres_config)
-        # TODO `use_existing_postgres` reads from the environment (and an `.env` file), so we set it here.
-        # Ideally we can pass it in as a config
-        for k, v in postgres_config.items():
-            os.environ[k] = str(v)
-
-        # Set up client side resources
-        client_chain = Chain(
-            rpc_uri=self.server_chain.rpc_uri,
-            config=Chain.Config(
-                # Use the singular database in the server
-                use_existing_postgres=True,
-                calc_pnl=False,
-            ),
-        )
-        self.client_pool = Hyperdrive(
-            chain=client_chain,
-            hyperdrive_address=self.server_pool.hyperdrive_address,
-            config=Hyperdrive.Config(),
-        )
+        self.chain = LocalChain(local_chain_config)
+        self.pool = LocalHyperdrive(self.chain, initial_pool_config)
 
         # Initialize the client agents
 
         # Define the rl bot
-        self.rl_bot = client_chain.init_agent(private_key=agent_pks[0], pool=self.client_pool, name="rl_bot")
+        self.rl_bot = self.chain.init_agent(
+            base=gym_config.rl_agent_budget, eth=FixedPoint(100), pool=self.pool, name="rl_bot"
+        )
 
         # Define the random bots
         self.random_bots = [
-            client_chain.init_agent(
-                private_key=agent_pks[i + 1],
-                pool=self.client_pool,
+            self.chain.init_agent(
+                base=gym_config.random_bot_budget,
+                eth=FixedPoint(100),
+                pool=self.pool,
                 policy=PolicyZoo.random,
                 # TODO set the seed per random bot here for reproducibility
                 # TODO omitting rng_seed results in the same random generators
@@ -196,9 +156,10 @@ class AsyncFullHyperdriveEnv(gym.Env):
 
         self.random_bots.extend(
             [
-                client_chain.init_agent(
-                    private_key=agent_pks[i + 1 + gym_config.num_random_bots],
-                    pool=self.client_pool,
+                self.chain.init_agent(
+                    base=gym_config.random_bot_budget,
+                    eth=FixedPoint(100),
+                    pool=self.pool,
                     policy=PolicyZoo.random_hold,
                     # TODO set the seed per random bot here for reproducibility
                     policy_config=PolicyZoo.random_hold.Config(
@@ -214,8 +175,16 @@ class AsyncFullHyperdriveEnv(gym.Env):
             ]
         )
 
+        # We explicitly set max approval here to ensure a single trade is a single
+        # transaction (otherwise a transaction may result in an approval + transaction)
+        self.rl_bot.set_max_approval(pool=self.pool)
+        _ = [agent.set_max_approval(pool=self.pool) for agent in self.random_bots]
+
+        # Ensure the db is synced up to this point
+        self.pool.sync_database()
+
         # Save a snapshot of initial conditions for resets
-        self.server_chain.save_snapshot()
+        self.chain.save_snapshot()
 
         assert gym_config.render_mode is None or gym_config.render_mode in self.metadata["render_modes"]
         self.render_mode = gym_config.render_mode
@@ -226,7 +195,7 @@ class AsyncFullHyperdriveEnv(gym.Env):
         self.gym_config = gym_config
 
         # After initialization, we set the chain to be manual mine mode
-        self.server_chain._web3.provider.make_request(method=RPCEndpoint("evm_setAutomine"), params=[False])
+        self.chain._web3.provider.make_request(method=RPCEndpoint("evm_setAutomine"), params=[False])
 
         # The space of allowed actions to take
         # Following https://github.com/AminHP/gym-mtsim
@@ -329,7 +298,7 @@ class AsyncFullHyperdriveEnv(gym.Env):
 
         # Load the snapshot for initial conditions
         # TODO do we need to undo manual mining mode here?
-        self.server_chain.load_snapshot()
+        self.chain.load_snapshot()
 
         # Reset internal member variables
         self._prev_pnl = 0.0
@@ -369,7 +338,7 @@ class AsyncFullHyperdriveEnv(gym.Env):
 
         # Get current wallet positions
         # We need exact decimals here to avoid rounding errors
-        rl_bot_wallet = self.rl_bot.get_positions(pool_filter=self.client_pool, coerce_float=False)
+        rl_bot_wallet = self.rl_bot.get_positions(pool_filter=self.pool, coerce_float=False)
 
         # TODO should likely try and handle these trades as fast as possible, or eventually
         # allow for reordering.
@@ -436,7 +405,7 @@ class AsyncFullHyperdriveEnv(gym.Env):
         # rl_bot_wallet = self.rl_bot.get_positions(coerce_float=False)
 
         # Open trades
-        min_tx_amount = self.server_pool.config.minimum_transaction_amount * 2
+        min_tx_amount = self.pool.config.minimum_transaction_amount * 2
         for trade_type in TradeTypes:
             # Only open trades if we haven't maxed out positions
             trade_positions = rl_bot_wallet[rl_bot_wallet["token_type"] == trade_type.name]
@@ -549,6 +518,12 @@ class AsyncFullHyperdriveEnv(gym.Env):
                 Contains auxiliary diagnostic information for debugging, learning, logging.
         """
 
+        # We manually control the chain -> db sync here, so we do it twice,
+        # once before the bot actions to ensure the bot is acting on current information,
+        # and once after for getting reward information
+        # TODO we may be able to get away with a single sync here, after advancing time.
+        self.pool.sync_database()
+
         truncated = False
         rl_bot_action_funcs = self._get_rl_actions(action)
 
@@ -583,17 +558,13 @@ class AsyncFullHyperdriveEnv(gym.Env):
 
         # We minimize time between bot making an action, so we advance time after actions have been made
         # but before the observation
-        if self.gym_config.step_advance_time >= self.server_pool.config.checkpoint_duration:
+        if self.gym_config.step_advance_time >= self.pool.config.checkpoint_duration:
             raise AssertionError("step_advance_time needs to be less than checkpoint_duration")
 
-        self.server_chain.advance_time(self.gym_config.step_advance_time, create_checkpoints=False)
+        self.chain.advance_time(self.gym_config.step_advance_time, create_checkpoints=False)
 
-        # NOTE since the trades happened on the client object, and remote objects do lazy db updating,
-        # we need to either explicitly sync the server pool events.
-        self.server_pool._run_blocking_data_pipeline()
-        events = self.server_pool.get_trade_events()
-        positions = self.server_pool.get_positions()
-        pass
+        # We sync the db here again for getting the observation and reward after advancing time
+        self.pool.sync_database()
 
         observation = self._get_observation()
         info = self._get_info()
@@ -626,17 +597,12 @@ class AsyncFullHyperdriveEnv(gym.Env):
         num_pending_txns = 0
         # TODO get the number of expected transactions from caller
         # This isn't going to reach the expected txns because random bots can refuse to make a trade
-        for _ in range(WAIT_TXNS_MAX_ITERATIONS):
-            pending_block = self.server_chain._web3.eth.get_block("pending", full_transactions=True)
-            assert "transactions" in pending_block
-            num_pending_txns = len(pending_block["transactions"])
-            if num_pending_txns < num_expected_txns:
-                await asyncio.sleep(0.5)
-            else:
-                break
+        while num_pending_txns < num_expected_txns:
+            num_pending_txns = self.chain._web3.eth.get_block_transaction_count("pending")
+            await asyncio.sleep(0.5)
 
         # We call `anvil_mine` to manually mine a block
-        self.server_chain._web3.provider.make_request(method=RPCEndpoint("anvil_mine"), params=[])
+        self.chain._web3.provider.make_request(method=RPCEndpoint("anvil_mine"), params=[])
 
         # wait for all background tasks to finish
         out = await background_tasks
@@ -649,7 +615,7 @@ class AsyncFullHyperdriveEnv(gym.Env):
 
     def _get_observation(self) -> dict[str, np.ndarray]:
         # Get the latest pool state feature from the db
-        pool_state_df = self.server_pool.get_pool_info(coerce_float=True)
+        pool_state_df = self.pool.get_pool_info(coerce_float=True)
         pool_state_df = pool_state_df[self.gym_config.pool_info_columns].iloc[-1].astype(float)
 
         out_obs = {}
@@ -664,14 +630,14 @@ class AsyncFullHyperdriveEnv(gym.Env):
         out_obs["lp_orders"] = np.zeros(2)
 
         # Observation data uses floats
-        rl_bot_wallet = self.rl_bot.get_positions(pool_filter=self.client_pool, coerce_float=True, calc_pnl=True)
+        rl_bot_wallet = self.rl_bot.get_positions(pool_filter=self.pool, coerce_float=True, calc_pnl=True)
 
         if not rl_bot_wallet.empty:
-            position_duration = self.server_pool.config.position_duration
+            position_duration = self.pool.config.position_duration
             # We convert timestamp to epoch time here
             # We keep negative values for time past maturity
-            current_block = self.server_pool.interface.get_current_block()
-            timestamp = self.server_pool.interface.get_block_timestamp(current_block)
+            current_block = self.pool.interface.get_current_block()
+            timestamp = self.pool.interface.get_block_timestamp(current_block)
             rl_bot_wallet["normalized_time_remaining"] = (
                 rl_bot_wallet["maturity_time"] - timestamp
             ) / position_duration
@@ -700,7 +666,7 @@ class AsyncFullHyperdriveEnv(gym.Env):
     def _calculate_reward(self) -> float:
         # The total delta for this episode
 
-        current_wallet = self.server_pool.get_positions(show_closed_positions=True, calc_pnl=True, coerce_float=True)
+        current_wallet = self.pool.get_positions(show_closed_positions=True, calc_pnl=True, coerce_float=True)
         # Filter by rl bot
         rl_bot_wallet = current_wallet[current_wallet["wallet_address"] == self.rl_bot.address]
         # The rl_bot_wallet shows the pnl of all positions
