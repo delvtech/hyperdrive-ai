@@ -516,6 +516,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # TODO: Verify that gym_config.episode length is working
         # TODO: _apply_action() is per agent_id, but _get_observations() is for all agents. Make this consistent?
         # TODO: Verify that truncated/terminated & self.truncateds/terminateds are being used correctly here
+        print(f"Step {self._step_count} Time: {datetime.now().strftime('%I:%M:%S %p')}")
         truncateds = {
             agent_id: self._apply_action(agent_id=agent_id, action=action) for agent_id, action in action_dict.items()
         }
