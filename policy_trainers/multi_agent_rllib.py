@@ -91,6 +91,7 @@ def run_train():
     for i in range(gym_config.num_training_steps):
         print(f"Training iteration {i}...")
         result = algo.train()
+        algo.save()
         print(pretty_print(result))
 
     ray.shutdown()
