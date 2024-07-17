@@ -1,6 +1,7 @@
 """Multi agent rllib policy trainer"""
 
 import os
+from datetime import datetime
 
 import ray
 from ray.rllib.algorithms.ppo import PPOConfig
@@ -17,16 +18,18 @@ def run_train():
     # TODO Setup monitoring and saving checkpoints
     # TODO Use ray train/tune?
     # TODO Make sure env config and algo config are saved somehow for reproducibility
+    start_time = datetime.now()
+    print(f"Start time: {start_time.strftime('%I:%M:%S %p')}")
     env_config = RayHyperdriveEnv.Config()
     policies = [POLICY_PREFIX + str(i) for i in range(env_config.num_agents)]
 
     # TODO: Make all of init() params explicit
-    ray.init(local_mode=True)  # Use local_mode=True for debugging
+    ray.init(local_mode=False)  # Use local_mode=True for debugging
     config = (
         PPOConfig()
         .environment(env=RayHyperdriveEnv, env_config={"env_config": env_config})
         .api_stack(enable_rl_module_and_learner=True, enable_env_runner_and_connector_v2=True)
-        .env_runners(num_env_runners=0, num_envs_per_env_runner=1)
+        .env_runners(num_env_runners=5, num_envs_per_env_runner=1)
         .resources(num_cpus_for_main_process=1, num_gpus=1)
         .learners(num_learners=0, num_gpus_per_learner=1, num_cpus_per_learner=1)
         .multi_agent(
@@ -83,11 +86,13 @@ def run_train():
     )
     algo = config.build()
     for i in range(env_config.num_training_loops):
-        print(f"Training iteration {i}...")
+        print(f"\nTraining Iteration {i}\nTime: {datetime.now().strftime('%I:%M:%S %p')}")
         result = algo.train()
         algo.save()
         print(pretty_print(result))
-
+    end_time = datetime.now()
+    print(f"\nFinished: {end_time.strftime('%I:%M:%S %p')}")
+    print(f"({(end_time - start_time).total_seconds() / 60} minutes.)")
     ray.shutdown()
 
 
