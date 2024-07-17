@@ -7,7 +7,7 @@ import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Iterable
 
 import gymnasium as gym
 import numpy as np
@@ -134,9 +134,6 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Multiagent setup
         self.agents = set({f"{AGENT_PREFIX}{i}" for i in range(self.env_config.num_agents)})
         self._agent_ids = set(self.agents)
-
-        self.terminateds = set()
-        self.truncateds = set()
 
         self.eval_mode = self.env_config.eval_mode
         self.sample_actions = self.env_config.sample_actions
@@ -337,8 +334,6 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Reset internal member variables
         self._prev_pnls: dict[str, float] = {agent_id: 0.0 for agent_id in self.agents}
         self._step_count = 0
-        self.terminateds = set()
-        self.truncateds = set()
 
         # Get first observation and info
         observations = self._get_observations()
@@ -528,8 +523,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
         """
         # TODO: Verify that env_config.episode length is working
         # TODO: _apply_action() is per agent_id, but _get_observations() is for all agents. Make this consistent?
-        # TODO: Verify that truncated/terminated & self.truncateds/terminateds are being used correctly here
-        print(f"Step {self._step_count} Time: {datetime.now().strftime('%I:%M:%S %p')}")
+        # TODO: Verify that truncated/terminated are being used correctly here. Do we need self.terminateds?
+        print(f"\nStep {self._step_count} Time: {datetime.now().strftime('%I:%M:%S %p')}")
         truncateds = {
             agent_id: self._apply_action(agent_id=agent_id, action=action) for agent_id, action in action_dict.items()
         }
@@ -558,37 +553,37 @@ class RayHyperdriveEnv(MultiAgentEnv):
             )
             self.interactive_hyperdrive.set_variable_rate(new_rate)
 
-        observations = self._get_observations()
-        info = self._get_info()
-        step_rewards = self._calculate_rewards()
-
-        terminateds = {agent_id: False for agent_id in self.agents}
+        observations = self._get_observations(agents=action_dict.keys())
+        info = self._get_info(agents=action_dict.keys())
+        step_rewards = self._calculate_rewards(agents=action_dict.keys())
 
         # TODO: Check this
         if self._step_count >= self.env_config.episode_length - 1:
-            terminateds = {agent_id: True for agent_id in self.agents}
-
-        terminateds["__all__"] = len(self.terminateds) == len(self.agents)
-        truncateds["__all__"] = len(self.truncateds) == len(self.agents)
+            terminateds = {agent_id: True for agent_id in action_dict.keys()}
+        else:
+            terminateds = {agent_id: False for agent_id in action_dict.keys()}
+        terminateds["__all__"] = all(terminateds.values())
+        truncateds["__all__"] = all(truncateds.values())
 
         self._step_count += 1
         # TODO when does the episode stop?
         return observations, step_rewards, terminateds, truncateds, info
 
-    def _get_info(self) -> dict:
-        # TODO return aux info here
-        return {agent_id: {} for agent_id in self.agents}
+    def _get_info(self, agents: Iterable[str] | None = None) -> dict:
+        agents = agents or self.agents
+        info_dict = {agent_id: {} for agent_id in agents}
+        return info_dict
 
-    def _get_observations(self) -> dict[str, np.ndarray]:
+    def _get_observations(self, agents: Iterable[str] | None = None) -> dict[str, np.ndarray]:
+        agents = agents or self.agents
         # Get the latest pool state feature from the db
         pool_state_df = self.interactive_hyperdrive.get_pool_info(coerce_float=True)
         pool_state_df = pool_state_df[self.env_config.pool_info_columns].iloc[-1].astype(float)
+        pool_features = pool_state_df.values
+        # TODO can also add other features, e.g., opening spot price
 
         out_obs = {}
-        for agent_id in self.agents:
-            pool_features = pool_state_df.values
-
-            # TODO can also add other features, e.g., opening spot price
+        for agent_id in agents:
             # Long Features: trade type, order_i -> [volume, value, normalized_time_remaining]
             long_features = np.zeros(self.num_long_features)
             # Short Features: trade type, order_i -> [volume, value, normalized_time_remaining]
@@ -638,14 +633,15 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         return out_obs
 
-    def _calculate_rewards(self) -> float:
+    def _calculate_rewards(self, agents: Iterable[str] | None = None) -> float:
+        agents = agents or self.agents
         # The total delta for this episode
 
         current_wallet = self.interactive_hyperdrive.get_positions(
             show_closed_positions=True, calc_pnl=True, coerce_float=True
         )
         reward = {}
-        for agent_id in self.agents:
+        for agent_id in agents:
             # Filter by agent ID
             agent_wallet = current_wallet[current_wallet["wallet_address"] == self.rl_agents[agent_id].address]
             # The agent_wallet shows the pnl of all positions
