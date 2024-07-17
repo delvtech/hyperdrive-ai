@@ -144,6 +144,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
         initial_pool_config = LocalHyperdrive.Config()
         self.chain = LocalChain(local_chain_config)
         self.interactive_hyperdrive = LocalHyperdrive(self.chain, initial_pool_config)
+        # TODO: This might need to be env indexed as well if num_envs_per_runner > 1
+        if self.worker_index == 0:
+            self.chain.run_dashboard()
 
         # TODO set seed
         self.rng = np.random.default_rng()
