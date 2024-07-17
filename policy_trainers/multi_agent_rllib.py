@@ -36,7 +36,6 @@ def run_train():
             policies_to_train=policies,
         )
         .training(
-            # **ppo_params
             # PPO params listed in /ray/rllib/algorithms/ppo/ppo.py
             # MDP discount factor TODO: Is this used in PPO?
             gamma=0.99,
