@@ -131,8 +131,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # TODO parameterize these in the gym config
 
         # Multiagent setup
-        self.agents = set({f"{AGENT_PREFIX}{i}" for i in range(self.env_config.num_agents)})
-        self._agent_ids = set(self.agents)
+        self.agents = {f"{AGENT_PREFIX}{i}" for i in range(self.env_config.num_agents)}
+        self._agent_ids = self.agents
 
         self.eval_mode = self.env_config.eval_mode
         self.sample_actions = self.env_config.sample_actions
