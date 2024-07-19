@@ -433,8 +433,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
             except Exception as err:  # pylint: disable=broad-except
                 # TODO use logging here
                 print(f"Warning: Failed to close trade: {repr(err)}")
-                # Terminate if error
-                return True
+                return False
 
         # Get current wallet positions again after closing trades
         agent_wallet = self.rl_agents[agent_id].get_positions(coerce_float=False)
@@ -477,8 +476,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
                         except BaseException as err:  # pylint: disable=broad-except
                             # TODO use logging here
                             print(f"Warning: Failed to open trade: {repr(err)}")
-                            # Terminate if error
-                            return True
+                            return False
 
         # LP actions
 
@@ -508,10 +506,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
         except Exception as err:  # pylint: disable=broad-except
             # TODO use logging here
             print(f"Warning: Failed to LP: {repr(err)}")
-            # Terminate if error
-            return True
+            return False
 
-        return False
+        return True
 
     def step(
         self, action_dict: dict[str, np.ndarray]
