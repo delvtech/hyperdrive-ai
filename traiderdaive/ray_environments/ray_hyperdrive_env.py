@@ -590,10 +590,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         info = self._get_info(agents=action_dict.keys())
         step_rewards = self._calculate_rewards(agents=action_dict.keys())
 
-        if self._step_count >= self.env_config.episode_length - 1:
-            episode_over = True
-        else:
-            episode_over = False
+        episode_over = self._step_count >= self.env_config.episode_length - 1
 
         truncateds = {agent_id: episode_over for agent_id in action_dict.keys()}
         terminateds = {agent_id: False for agent_id in action_dict.keys()}
