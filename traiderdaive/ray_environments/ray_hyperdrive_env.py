@@ -558,9 +558,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # TODO: _apply_action() is per agent_id, but _get_observations() is for all agents. Make this consistent?
         # TODO: Verify that truncated/terminated are being used correctly here. Do we need self.terminateds?
         print(f"\nStep {self._step_count} Time: {datetime.now().strftime('%I:%M:%S %p')}")
-        truncateds = {
-            agent_id: self._apply_action(agent_id=agent_id, action=action) for agent_id, action in action_dict.items()
-        }
+        # Do actions and get truncated status for agents provided, and set the rest to True
+        for agent_id, action in action_dict.items():
+            _ = self._apply_action(agent_id=agent_id, action=action)
 
         # Run other bots
         # Suppress logging here
