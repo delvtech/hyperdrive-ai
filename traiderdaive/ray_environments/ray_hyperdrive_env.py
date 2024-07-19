@@ -9,7 +9,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Iterable
 
-import gymnasium as gym
 import numpy as np
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
