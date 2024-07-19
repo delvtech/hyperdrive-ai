@@ -133,6 +133,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Multiagent setup
         self.agents = {f"{AGENT_PREFIX}{i}" for i in range(self.env_config.num_agents)}
         self._agent_ids = self.agents
+        self.terminateds = set()
+        self.truncateds = set()
 
         self.eval_mode = self.env_config.eval_mode
         self.sample_actions = self.env_config.sample_actions
@@ -333,6 +335,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Reset internal member variables
         self._prev_pnls: dict[str, float] = {agent_id: 0.0 for agent_id in self.agents}
         self._step_count = 0
+        self.terminateds = set()
+        self.truncateds = set()
 
         # Get first observation and info
         observations = self._get_observations()
