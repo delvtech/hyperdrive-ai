@@ -341,6 +341,20 @@ class RayHyperdriveEnv(MultiAgentEnv):
         return observations, info
 
     def _apply_action(self, agent_id: str, action: np.ndarray) -> bool:
+        """Execute the bot action on-chain.
+
+        Arguments
+        ---------
+        agent_id: str
+            Unique identifying string for the agent.
+        action: np.ndarray
+            Action activations returned by the policy network.
+
+        Returns
+        -------
+        bool
+            True if the trade was successful, False otherwise.
+        """
         # TODO
         # pylint: disable=too-many-locals
         # pylint: disable=too-many-branches
