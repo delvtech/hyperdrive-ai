@@ -512,7 +512,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
     def step(
         self, action_dict: dict[str, np.ndarray]
-    ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
+    ) -> tuple[dict[str, np.ndarray], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]]:
         """Takes a step in the the environment.
 
         Arguments
