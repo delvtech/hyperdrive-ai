@@ -515,6 +515,21 @@ class RayHyperdriveEnv(MultiAgentEnv):
     ) -> tuple[dict[str, np.ndarray], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]]:
         """Takes a step in the the environment.
 
+        .. note::
+        Truncated & terminated result in different loss updates for the reward
+        estimator network. In our case, the environment represents an
+        infinite-horizon (continuing) task. The goal for our agent is to
+        maximize the cumulative reward over an infinite or indefinite time
+        horizon.
+
+        This means we need to include a discount factor to ensure convergence.
+        As such, we _always_ want `terminated == False` -- aka the game never
+        ends ("terminates"). We do need to accumulate gradients and do model
+        updates, however, so we must discretize the environment and impose some
+        sort of stopping criteria. This can be achieved by truncating, where we
+        stop the game at some time (can be arbitrary) that is not known by the
+        agent (i.e. not in the observation space).
+
         Arguments
         ---------
         action: ActType
