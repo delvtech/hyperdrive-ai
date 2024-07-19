@@ -8,6 +8,8 @@
 # Output Dirs
 **/.interactive_state
 **/.traider_models
+*.log
+*/profiling/*
 
 __pycache__
 
