@@ -9,7 +9,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Iterable
 
-import gymnasium as gym
 import numpy as np
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
@@ -342,6 +341,20 @@ class RayHyperdriveEnv(MultiAgentEnv):
         return observations, info
 
     def _apply_action(self, agent_id: str, action: np.ndarray) -> bool:
+        """Execute the bot action on-chain.
+
+        Arguments
+        ---------
+        agent_id: str
+            Unique identifying string for the agent.
+        action: np.ndarray
+            Action activations returned by the policy network.
+
+        Returns
+        -------
+        bool
+            True if the trade was successful, False otherwise.
+        """
         # TODO
         # pylint: disable=too-many-locals
         # pylint: disable=too-many-branches
@@ -388,8 +401,16 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
             # TODO Close orders
             trade_positions = agent_wallet[agent_wallet["token_type"] == trade_type.name]
+
+            # TODO: (Dylan) Is this right? or should they be sorted by spot price at time of purchase?
+            # for all opened positions the closing price is the same, regardless of when it was opened
+            # perhaps best to close the position with the best price (ideally most >= for longs, <= for shorts)
+            # compared to the current price? Perhaps sunk cost to phrase it as worse-off positions have a
+            # chance to recover, but it seems like holding onto your mistake until you can't any more is
+            # smart if you have a better action to take.
             # Ensure positions are sorted from oldest to newest
             trade_positions = trade_positions.sort_values("maturity_time")
+
             num_trade_positions = len(trade_positions)
 
             # Filter orders to close to be only the number of trade positions
@@ -412,8 +433,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
             except Exception as err:  # pylint: disable=broad-except
                 # TODO use logging here
                 print(f"Warning: Failed to close trade: {repr(err)}")
-                # Terminate if error
-                return True
+                return False
 
         # Get current wallet positions again after closing trades
         agent_wallet = self.rl_agents[agent_id].get_positions(coerce_float=False)
@@ -456,8 +476,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
                         except BaseException as err:  # pylint: disable=broad-except
                             # TODO use logging here
                             print(f"Warning: Failed to open trade: {repr(err)}")
-                            # Terminate if error
-                            return True
+                            return False
 
         # LP actions
 
@@ -487,15 +506,29 @@ class RayHyperdriveEnv(MultiAgentEnv):
         except Exception as err:  # pylint: disable=broad-except
             # TODO use logging here
             print(f"Warning: Failed to LP: {repr(err)}")
-            # Terminate if error
-            return True
+            return False
 
-        return False
+        return True
 
     def step(
         self, action_dict: dict[str, np.ndarray]
-    ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
+    ) -> tuple[dict[str, np.ndarray], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]]:
         """Takes a step in the the environment.
+
+        .. note::
+        Truncated & terminated result in different loss updates for the reward
+        estimator network. In our case, the environment represents an
+        infinite-horizon (continuing) task. The goal for our agent is to
+        maximize the cumulative reward over an infinite or indefinite time
+        horizon.
+
+        This means we need to include a discount factor to ensure convergence.
+        As such, we _always_ want `terminated == False` -- aka the game never
+        ends ("terminates"). We do need to accumulate gradients and do model
+        updates, however, so we must discretize the environment and impose some
+        sort of stopping criteria. This can be achieved by truncating, where we
+        stop the game at some time (can be arbitrary) that is not known by the
+        agent (i.e. not in the observation space).
 
         Arguments
         ---------
@@ -525,9 +558,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # TODO: _apply_action() is per agent_id, but _get_observations() is for all agents. Make this consistent?
         # TODO: Verify that truncated/terminated are being used correctly here. Do we need self.terminateds?
         print(f"\nStep {self._step_count} Time: {datetime.now().strftime('%I:%M:%S %p')}")
-        truncateds = {
-            agent_id: self._apply_action(agent_id=agent_id, action=action) for agent_id, action in action_dict.items()
-        }
+        # Do actions and get truncated status for agents provided, and set the rest to True
+        for agent_id, action in action_dict.items():
+            _ = self._apply_action(agent_id=agent_id, action=action)
 
         # Run other bots
         # Suppress logging here
@@ -557,13 +590,16 @@ class RayHyperdriveEnv(MultiAgentEnv):
         info = self._get_info(agents=action_dict.keys())
         step_rewards = self._calculate_rewards(agents=action_dict.keys())
 
-        # TODO: Check this
-        if self._step_count >= self.env_config.episode_length - 1:
-            terminateds = {agent_id: True for agent_id in action_dict.keys()}
-        else:
-            terminateds = {agent_id: False for agent_id in action_dict.keys()}
-        terminateds["__all__"] = all(terminateds.values())
-        truncateds["__all__"] = all(truncateds.values())
+        episode_over = self._step_count >= self.env_config.episode_length - 1
+
+        truncateds = {agent_id: episode_over for agent_id in action_dict.keys()}
+        terminateds = {agent_id: False for agent_id in action_dict.keys()}
+
+        self.truncateds.update({agent_id for agent_id, truncated in truncateds.items() if truncated})
+        self.terminateds.update({agent_id for agent_id, terminated in terminateds.items() if terminated})
+
+        truncateds["__all__"] = len(self.truncateds) == len(self.agents)
+        terminateds["__all__"] = len(self.terminateds) == len(self.agents)
 
         self._step_count += 1
         # TODO when does the episode stop?
