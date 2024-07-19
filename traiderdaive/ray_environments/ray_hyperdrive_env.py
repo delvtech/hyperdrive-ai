@@ -401,8 +401,16 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
             # TODO Close orders
             trade_positions = agent_wallet[agent_wallet["token_type"] == trade_type.name]
+
+            # TODO: (Dylan) Is this right? or should they be sorted by spot price at time of purchase?
+            # for all opened positions the closing price is the same, regardless of when it was opened
+            # perhaps best to close the position with the best price (ideally most >= for longs, <= for shorts)
+            # compared to the current price? Perhaps sunk cost to phrase it as worse-off positions have a
+            # chance to recover, but it seems like holding onto your mistake until you can't any more is
+            # smart if you have a better action to take.
             # Ensure positions are sorted from oldest to newest
             trade_positions = trade_positions.sort_values("maturity_time")
+
             num_trade_positions = len(trade_positions)
 
             # Filter orders to close to be only the number of trade positions
