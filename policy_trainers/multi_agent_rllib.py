@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 
 import ray
+from ray.rllib.algorithms import AlgorithmConfig
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.tune.logger import pretty_print
 
@@ -25,7 +26,7 @@ def run_train():
 
     # TODO: Make all of init() params explicit
     ray.init(local_mode=False)  # Use local_mode=True for debugging
-    config = (
+    config: AlgorithmConfig = (
         PPOConfig()
         .environment(env=RayHyperdriveEnv, env_config={"env_config": env_config})
         .api_stack(enable_rl_module_and_learner=True, enable_env_runner_and_connector_v2=True)

@@ -10,12 +10,11 @@ from enum import Enum
 from typing import Any, Iterable
 
 import numpy as np
+from agent0 import LocalChain, LocalHyperdrive, PolicyZoo
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from scipy.special import expit
-
-from agent0 import LocalChain, LocalHyperdrive, PolicyZoo
 
 AGENT_PREFIX = "agent"
 POLICY_PREFIX = "policy"
@@ -156,7 +155,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         self.chain = LocalChain(local_chain_config)
         self.interactive_hyperdrive = LocalHyperdrive(self.chain, initial_pool_config)
         # TODO: This might need to be env indexed as well if num_envs_per_runner > 1
-        if self.worker_index == 0:
+        if self.worker_index == 1:
             self.chain.run_dashboard()
 
         # TODO set seed
@@ -586,7 +585,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
             current_rate = self.interactive_hyperdrive.interface.get_variable_rate()
             # new rate is random & between 10x and 0.1x the current rate
             new_rate = current_rate * FixedPoint(
-                np.maximum(10.0, np.minimum(0.1, np.random.normal(loc=1.0, scale=0.01)))
+                np.minimum(10.0, np.maximum(0.1, np.random.normal(loc=1.0, scale=0.01)))
             )
             self.interactive_hyperdrive.set_variable_rate(new_rate)
 
@@ -673,7 +672,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         return out_obs
 
-    def _calculate_rewards(self, agents: Iterable[str] | None = None) -> float:
+    def _calculate_rewards(self, agents: Iterable[str] | None = None) -> dict[str, float]:
         agents = agents or self.agents
         # The total delta for this episode
 
