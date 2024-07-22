@@ -334,6 +334,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Load the snapshot for initial conditions
         self.chain.load_snapshot()
 
+        self.interactive_hyperdrive.sync_database()
+
         # Reset internal member variables
         self._prev_pnls: dict[str, float] = {agent_id: 0.0 for agent_id in self.agents}
         self._step_count = 0
