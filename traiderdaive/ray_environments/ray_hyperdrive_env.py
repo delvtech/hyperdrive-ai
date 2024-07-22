@@ -149,6 +149,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
             db_port=db_port,
             chain_port=chain_port,
             calc_pnl=False,
+            manual_database_sync=True,
         )
 
         initial_pool_config = LocalHyperdrive.Config()
@@ -208,6 +209,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
                 for i in range(self.env_config.num_random_hold_bots)
             ]
         )
+
+        self.interactive_hyperdrive.sync_database()
 
         # Save a snapshot of initial conditions for resets
         self.chain.save_snapshot()
@@ -439,7 +442,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
                 return False
 
         # Get current wallet positions again after closing trades
-        agent_wallet = self.rl_agents[agent_id].get_positions(coerce_float=False)
+        # agent_wallet = self.rl_agents[agent_id].get_positions(coerce_float=False)
 
         # Open trades
         min_tx_amount = self.interactive_hyperdrive.config.minimum_transaction_amount * 2
@@ -562,6 +565,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # TODO: Verify that truncated/terminated are being used correctly here. Do we need self.terminateds?
         print(f"\nStep {self._step_count} Time: {datetime.now().strftime('%I:%M:%S %p')}")
         # Do actions and get truncated status for agents provided, and set the rest to True
+        self.interactive_hyperdrive.sync_database()
+
         for agent_id, action in action_dict.items():
             _ = self._apply_action(agent_id=agent_id, action=action)
 
@@ -588,6 +593,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
                 np.minimum(10.0, np.maximum(0.1, np.random.normal(loc=1.0, scale=0.01)))
             )
             self.interactive_hyperdrive.set_variable_rate(new_rate)
+
+        self.interactive_hyperdrive.sync_database()
 
         observations = self._get_observations(agents=action_dict.keys())
         info = self._get_info(agents=action_dict.keys())
