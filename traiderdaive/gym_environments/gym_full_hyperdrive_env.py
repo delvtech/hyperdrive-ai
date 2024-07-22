@@ -112,26 +112,30 @@ class FullHyperdriveEnv(gym.Env):
             chain_port = 10002
 
         local_chain_config = LocalChain.Config(
-            block_timestamp_interval=12, db_port=db_port, chain_port=chain_port, calc_pnl=False
+            block_timestamp_interval=12,
+            db_port=db_port,
+            chain_port=chain_port,
+            calc_pnl=False,
+            manual_database_sync=True,
         )
 
         initial_pool_config = LocalHyperdrive.Config()
         self.chain = LocalChain(local_chain_config)
-        self.interactive_hyperdrive = LocalHyperdrive(self.chain, initial_pool_config)
+        self.pool = LocalHyperdrive(self.chain, initial_pool_config)
 
         # TODO set seed
         self.rng = np.random.default_rng()
 
         # Define the rl bot
         self.rl_bot = self.chain.init_agent(
-            base=gym_config.rl_agent_budget, eth=FixedPoint(100), pool=self.interactive_hyperdrive, name="rl_bot"
+            base=gym_config.rl_agent_budget, eth=FixedPoint(100), pool=self.pool, name="rl_bot"
         )
         # Define the random bots
         self.random_bots = [
             self.chain.init_agent(
                 base=gym_config.random_bot_budget,
                 eth=FixedPoint(100),
-                pool=self.interactive_hyperdrive,
+                pool=self.pool,
                 policy=PolicyZoo.random,
                 # TODO set the seed per random bot here for reproducibility
                 # TODO omitting rng_seed results in the same random generators
@@ -147,7 +151,7 @@ class FullHyperdriveEnv(gym.Env):
                 self.chain.init_agent(
                     base=gym_config.random_bot_budget,
                     eth=FixedPoint(100),
-                    pool=self.interactive_hyperdrive,
+                    pool=self.pool,
                     policy=PolicyZoo.random_hold,
                     # TODO set the seed per random bot here for reproducibility
                     policy_config=PolicyZoo.random_hold.Config(
@@ -162,6 +166,9 @@ class FullHyperdriveEnv(gym.Env):
                 for i in range(gym_config.num_random_hold_bots)
             ]
         )
+
+        # Ensure the db is synced up to this point
+        self.pool.sync_database()
 
         # Save a snapshot of initial conditions for resets
         self.chain.save_snapshot()
@@ -358,10 +365,10 @@ class FullHyperdriveEnv(gym.Env):
                 return True
 
         # Get current wallet positions again after closing trades
-        rl_bot_wallet = self.rl_bot.get_positions(coerce_float=False)
+        # rl_bot_wallet = self.rl_bot.get_positions(coerce_float=False)
 
         # Open trades
-        min_tx_amount = self.interactive_hyperdrive.config.minimum_transaction_amount * 2
+        min_tx_amount = self.pool.config.minimum_transaction_amount * 2
         for trade_type in TradeTypes:
             # Only open trades if we haven't maxed out positions
             trade_positions = rl_bot_wallet[rl_bot_wallet["token_type"] == trade_type.name]
@@ -462,6 +469,10 @@ class FullHyperdriveEnv(gym.Env):
                 Contains auxiliary diagnostic information for debugging, learning, logging.
         """
 
+        print("Step called")
+
+        self.pool.sync_database()
+
         truncated = self._apply_action(action)
 
         # Run other bots
@@ -479,6 +490,8 @@ class FullHyperdriveEnv(gym.Env):
         # but before the observation
         self.chain.advance_time(self.gym_config.step_advance_time, create_checkpoints=True)
 
+        self.pool.sync_database()
+
         observation = self._get_observation()
         info = self._get_info()
         step_reward = self._calculate_reward()
@@ -490,7 +503,9 @@ class FullHyperdriveEnv(gym.Env):
             terminated = True
 
         # TODO when does the episode stop?
-        return observation, step_reward, terminated, truncated, info
+        # return observation, step_reward, terminated, truncated, info
+        # FIXME never terminate or truncate for timing
+        return observation, step_reward, False, False, info
 
     def _get_info(self) -> dict:
         # TODO return aux info here
@@ -498,7 +513,7 @@ class FullHyperdriveEnv(gym.Env):
 
     def _get_observation(self) -> dict[str, np.ndarray]:
         # Get the latest pool state feature from the db
-        pool_state_df = self.interactive_hyperdrive.get_pool_info(coerce_float=True)
+        pool_state_df = self.pool.get_pool_info(coerce_float=True)
         pool_state_df = pool_state_df[self.gym_config.pool_info_columns].iloc[-1].astype(float)
 
         out_obs = {}
@@ -516,11 +531,11 @@ class FullHyperdriveEnv(gym.Env):
         rl_bot_wallet = self.rl_bot.get_positions(coerce_float=True, calc_pnl=True)
 
         if not rl_bot_wallet.empty:
-            position_duration = self.interactive_hyperdrive.config.position_duration
+            position_duration = self.pool.config.position_duration
             # We convert timestamp to epoch time here
             # We keep negative values for time past maturity
-            current_block = self.interactive_hyperdrive.interface.get_current_block()
-            timestamp = self.interactive_hyperdrive.interface.get_block_timestamp(current_block)
+            current_block = self.pool.interface.get_current_block()
+            timestamp = self.pool.interface.get_block_timestamp(current_block)
             rl_bot_wallet["normalized_time_remaining"] = (
                 rl_bot_wallet["maturity_time"] - timestamp
             ) / position_duration
@@ -549,9 +564,7 @@ class FullHyperdriveEnv(gym.Env):
     def _calculate_reward(self) -> float:
         # The total delta for this episode
 
-        current_wallet = self.interactive_hyperdrive.get_positions(
-            show_closed_positions=True, calc_pnl=True, coerce_float=True
-        )
+        current_wallet = self.pool.get_positions(show_closed_positions=True, calc_pnl=True, coerce_float=True)
         # Filter by rl bot
         rl_bot_wallet = current_wallet[current_wallet["wallet_address"] == self.rl_bot.address]
         # The rl_bot_wallet shows the pnl of all positions
