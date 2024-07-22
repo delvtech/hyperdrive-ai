@@ -150,6 +150,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
             chain_port=chain_port,
             calc_pnl=False,
             manual_database_sync=True,
+            backfill_pool_info=False,
         )
 
         initial_pool_config = LocalHyperdrive.Config()
