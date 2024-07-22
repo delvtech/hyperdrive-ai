@@ -623,6 +623,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
         return info_dict
 
     def _get_observations(self, agents: Iterable[str] | None = None) -> dict[str, np.ndarray]:
+        # TODO: (dylan) If we're changing up pool config per episode (as we should be),
+        # but it's constant within an episode, should we include it in the obs space?
         agents = agents or self.agents
         # Get the latest pool state feature from the db
         pool_state_df = self.interactive_hyperdrive.get_pool_info(coerce_float=True)
