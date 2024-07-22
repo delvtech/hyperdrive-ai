@@ -10,6 +10,8 @@ from ray.tune.logger import pretty_print
 
 from traiderdaive.ray_environments.ray_hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX, RayHyperdriveEnv
 
+GPU = True
+
 
 def run_train():
     """Runs training to generate a RL model."""
@@ -30,9 +32,18 @@ def run_train():
         PPOConfig()
         .environment(env=RayHyperdriveEnv, env_config={"env_config": env_config})
         .api_stack(enable_rl_module_and_learner=True, enable_env_runner_and_connector_v2=True)
-        .env_runners(num_env_runners=5, num_envs_per_env_runner=1)
-        .resources(num_cpus_for_main_process=1, num_gpus=1)
-        .learners(num_learners=0, num_gpus_per_learner=1, num_cpus_per_learner=1)
+        .env_runners(
+            num_env_runners=5,
+            num_envs_per_env_runner=1,
+            sample_timeout_s=120,
+            rollout_fragment_length=50,
+        )
+        .resources(num_cpus_for_main_process=1, num_gpus=1 if GPU else 0)
+        .learners(
+            num_learners=0,
+            num_gpus_per_learner=1 if GPU else 0,
+            num_cpus_per_learner=0 if GPU else 1,
+        )
         .multi_agent(
             policies=set(policies),
             # Mapping agent0 to policy0, etc.
