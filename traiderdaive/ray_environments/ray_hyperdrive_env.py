@@ -392,13 +392,16 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # (6) Remove liquidity
         # (7) Redeem withdrawal shares
 
+        # Get agent positions once so we don't hit the database too many times.
+        # The downside of this is we could undershoot the max_positions_per_type
+        # since any close actions this round will not be accounted for. This
+        # is a fine tradeoff, though, since it's an undershoot and the next time
+        # apply_action is called the previous closes will be accounted for.
+        agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=False)
+
         # Closing trades
         for trade_type in TradeTypes:
             # Get agent positions for this trade type
-            agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=False)
-            if agent_positions.empty:
-                # Nothing to close
-                continue
             trade_positions = agent_positions[agent_positions["token_type"] == trade_type.name]
 
             # Handle closing orders
@@ -448,7 +451,6 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Open trades
         for trade_type in TradeTypes:
             # Get agent positions again after closing
-            agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=False)
             trade_positions = agent_positions[agent_positions["token_type"] == trade_type.name]
             num_trade_positions = len(trade_positions)
             # Only open trades if we haven't maxed out positions
@@ -462,6 +464,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
                 if open_order:
                     try:
+                        # Need to get wallet inside this loop since each loop
+                        # iteration could include an open that reduces balance.
                         agent_wallet_balance = self.rl_agents[agent_id].get_wallet().balance.amount
                         if trade_type == TradeTypes.LONG and agent_wallet_balance >= min_tx_amount:
                             # Get the agent's max trade amount
