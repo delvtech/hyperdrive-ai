@@ -383,6 +383,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Current solution is to minimize the amount of time between trades within a step
         # and accelerate time in a single step at the end of a step.
 
+        # TODO: Add 6 additional logit dimensions that indicate trade order.
+        # Then we can sort by those and the agent can specify the order of trades.
         # The RL bot handles trades in this order:
         # (1) Close long tokens
         # (2) Close short tokens
@@ -404,27 +406,24 @@ class RayHyperdriveEnv(MultiAgentEnv):
             # Get agent positions for this trade type
             trade_positions = agent_positions[agent_positions["token_type"] == trade_type.name]
 
+            # Ensure positions are sorted from oldest to newest. The action
+            # space is sorted this way. The agent itself is going to choose an
+            # ordering.
+            trade_positions = trade_positions.sort_values("maturity_time")
+            num_trade_positions = len(trade_positions)
+            
             # Handle closing orders
             # The index of orders here is from oldest to newest
-            # TODO if we want the rl bot to explicitly learn how to close orders based on
-            # the orders input feature, we can shuffle the order of closing orders and match them here
+            # TODO (sheng) if we want the rl bot to explicitly learn how to
+            # close orders based on the orders input feature, we can shuffle the
+            # order of closing orders and match them here in this case we would
+            # need to also shuffle the obs space in the exact same way.
             close_orders_probability = expit(close_long_short_actions[trade_type.value, :])
             if self.sample_actions:
                 random_roll = self.rng.uniform(0, 1, len(close_orders_probability))
                 orders_to_close_index = np.nonzero(random_roll <= close_orders_probability)[0]
             else:
                 orders_to_close_index = np.nonzero(close_orders_probability > self.env_config.close_threshold)[0]
-
-
-            # TODO: (Dylan) Is this right? or should they be sorted by spot price at time of purchase?
-            # for all opened positions the closing price is the same, regardless of when it was opened
-            # perhaps best to close the position with the best price (ideally most >= for longs, <= for shorts)
-            # compared to the current price? Perhaps sunk cost to phrase it as worse-off positions have a
-            # chance to recover, but it seems like holding onto your mistake until you can't any more is
-            # smart if you have a better action to take.
-            # Ensure positions are sorted from oldest to newest
-            trade_positions = trade_positions.sort_values("maturity_time")
-            num_trade_positions = len(trade_positions)
 
             # Filter orders to close to be only the number of trade positions
             orders_to_close_index = orders_to_close_index[orders_to_close_index < num_trade_positions]
