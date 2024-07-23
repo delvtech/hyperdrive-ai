@@ -66,7 +66,6 @@ class RayHyperdriveEnv(MultiAgentEnv):
         num_agents: int = 4
         # The constant trade amounts for longs and shorts
         rl_agent_budget: FixedPoint = FixedPoint(1_000_000)
-        max_trade_amount: FixedPoint = FixedPoint(1_000)
         max_positions_per_type: int = 10
         base_reward_scale: float = 0.0
         # The threshold for the probability of opening and closing orders
@@ -368,16 +367,16 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # pylint: disable=too-many-branches
         # pylint: disable=too-many-nested-blocks
         # pylint: disable=too-many-statements
+        trade_success = True
+
+        # The actual min txn amount is a function of pool state. Without helper functions, we simply add a safe amount.
+        min_tx_amount = self.interactive_hyperdrive.config.minimum_transaction_amount * FixedPoint("2")
 
         long_short_actions = action[:-4]
         long_short_actions = long_short_actions.reshape((len(TradeTypes), self.env_config.max_positions_per_type + 2))
         close_long_short_actions = long_short_actions[:, :-2]
         open_long_short_actions = long_short_actions[:, -2:]
         lp_actions = action[-4:]
-
-        # Get current wallet positions
-        # We need exact decimals here to avoid rounding errors
-        agent_wallet = self.rl_agents[agent_id].get_positions(coerce_float=False)
 
         # TODO should likely try and handle these trades as fast as possible, or eventually
         # allow for reordering.
@@ -395,20 +394,24 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # Closing trades
         for trade_type in TradeTypes:
-            close_orders_probability = expit(close_long_short_actions[trade_type.value, :])
+            # Get agent positions for this trade type
+            agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=False)
+            if agent_positions.empty:
+                # Nothing to close
+                continue
+            trade_positions = agent_positions[agent_positions["token_type"] == trade_type.name]
 
             # Handle closing orders
             # The index of orders here is from oldest to newest
             # TODO if we want the rl bot to explicitly learn how to close orders based on
             # the orders input feature, we can shuffle the order of closing orders and match them here
+            close_orders_probability = expit(close_long_short_actions[trade_type.value, :])
             if self.sample_actions:
                 random_roll = self.rng.uniform(0, 1, len(close_orders_probability))
                 orders_to_close_index = np.nonzero(random_roll <= close_orders_probability)[0]
             else:
                 orders_to_close_index = np.nonzero(close_orders_probability > self.env_config.close_threshold)[0]
 
-            # TODO Close orders
-            trade_positions = agent_wallet[agent_wallet["token_type"] == trade_type.name]
 
             # TODO: (Dylan) Is this right? or should they be sorted by spot price at time of purchase?
             # for all opened positions the closing price is the same, regardless of when it was opened
@@ -418,7 +421,6 @@ class RayHyperdriveEnv(MultiAgentEnv):
             # smart if you have a better action to take.
             # Ensure positions are sorted from oldest to newest
             trade_positions = trade_positions.sort_values("maturity_time")
-
             num_trade_positions = len(trade_positions)
 
             # Filter orders to close to be only the number of trade positions
@@ -440,27 +442,18 @@ class RayHyperdriveEnv(MultiAgentEnv):
                         )
             except Exception as err:  # pylint: disable=broad-except
                 # TODO use logging here
-                print(f"Warning: Failed to close trade: {repr(err)}")
-                return False
-
-        # Get current wallet positions again after closing trades
-        # agent_wallet = self.rl_agents[agent_id].get_positions(coerce_float=False)
+                print(f"Warning: Failed to close {trade_type} trade: {repr(err)}")
+                trade_success = False
 
         # Open trades
-        min_tx_amount = self.interactive_hyperdrive.config.minimum_transaction_amount * 2
         for trade_type in TradeTypes:
-            # Only open trades if we haven't maxed out positions
-            trade_positions = agent_wallet[agent_wallet["token_type"] == trade_type.name]
+            # Get agent positions again after closing
+            agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=False)
+            trade_positions = agent_positions[agent_positions["token_type"] == trade_type.name]
             num_trade_positions = len(trade_positions)
+            # Only open trades if we haven't maxed out positions
             if num_trade_positions < self.env_config.max_positions_per_type:
                 new_order_probability = expit(open_long_short_actions[trade_type.value, 0])
-                # While volume isn't strictly a probability, we interpret it as a value between 0 and 1
-                # where 0 is no volume and 1 is max trade amount
-                volume_adjusted = (
-                    min_tx_amount
-                    + FixedPoint(expit(open_long_short_actions[trade_type.value, 1])) * self.env_config.max_trade_amount
-                )
-
                 # Opening orders
                 if self.sample_actions:
                     open_order = self.rng.uniform(0, 1) <= new_order_probability
@@ -468,31 +461,53 @@ class RayHyperdriveEnv(MultiAgentEnv):
                     open_order = new_order_probability > self.env_config.open_threshold
 
                 if open_order:
-                    # If the wallet has enough money
-                    if volume_adjusted <= self.rl_agents[agent_id].get_wallet().balance.amount:
-                        try:
-                            if trade_type == TradeTypes.LONG:
-                                self.rl_agents[agent_id].open_long(base=volume_adjusted)
-                            elif trade_type == TradeTypes.SHORT:
-                                # max_short = self.interactive_hyperdrive.interface.calc_max_short(
-                                #    volume_adjusted,
-                                #    self.interactive_hyperdrive.interface.current_pool_state,
-                                # )
-                                # self.rl_bot.open_short(bonds=max_short)
-                                self.rl_agents[agent_id].open_short(bonds=volume_adjusted)
-                        # Base exception here to catch rust errors
-                        except BaseException as err:  # pylint: disable=broad-except
-                            # TODO use logging here
-                            print(f"Warning: Failed to open trade: {repr(err)}")
-                            return False
+                    try:
+                        agent_wallet_balance = self.rl_agents[agent_id].get_wallet().balance.amount
+                        if trade_type == TradeTypes.LONG and agent_wallet_balance >= min_tx_amount:
+                            # Get the agent's max trade amount
+                            max_long_amount = self.interactive_hyperdrive.interface.calc_max_long(budget=agent_wallet_balance)
+                            # While volume isn't strictly a probability, we interpret it as a value between 0 and 1
+                            amount_probability = FixedPoint(expit(open_long_short_actions[trade_type.value, 1]))
+                            # Map the probability to be between the min and max transaction amounts
+                            volume_adjusted = (
+                                min_tx_amount
+                                +  amount_probability * (max_long_amount - min_tx_amount)
+                            )
+                            self.rl_agents[agent_id].open_long(base=volume_adjusted)
+                        elif trade_type == TradeTypes.SHORT and agent_wallet_balance >= min_tx_amount:
+                            # Get the agent's max trade amount
+                            agent_wallet_balance = self.rl_agents[agent_id].get_wallet().balance.amount
+                            max_short_amount = self.interactive_hyperdrive.interface.calc_max_short(budget=agent_wallet_balance)
+                            # While volume isn't strictly a probability, we interpret it as a value between 0 and 1
+                            amount_probability = FixedPoint(expit(open_long_short_actions[trade_type.value, 1]))
+                            # Map the probability to be between the min and max transaction amounts
+                            volume_adjusted = (
+                                min_tx_amount
+                                + amount_probability  * (max_short_amount - min_tx_amount)
+                            )
+                            self.rl_agents[agent_id].open_short(bonds=volume_adjusted)
+                    # Base exception here to catch rust errors
+                    except BaseException as err:  # pylint: disable=broad-except
+                        # TODO use logging here
+                        print(f"Warning: Failed to open {trade_type} trade: {repr(err)}")
+                        trade_success = False
 
         # LP actions
-
+        agent_wallet = self.rl_agents[agent_id].get_wallet()
         lp_actions_expit = expit(lp_actions)
-        add_lp_probability = lp_actions_expit[0]
-        add_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[1]) * self.env_config.max_trade_amount
-        remove_lp_probability = lp_actions_expit[2]
-        remove_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[3]) * self.env_config.max_trade_amount
+        if agent_wallet.balance.amount >= min_tx_amount:
+            add_lp_probability = lp_actions_expit[0]
+            add_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[1]) * (agent_wallet.balance.amount - min_tx_amount)
+        else:
+            add_lp_probability = np.float64(0)
+            add_lp_volume = FixedPoint(0)
+
+        if agent_wallet.lp_tokens >= min_tx_amount:
+            remove_lp_probability = lp_actions_expit[2]
+            remove_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[3]) * (agent_wallet.lp_tokens - min_tx_amount)
+        else:
+            remove_lp_probability = np.float64(0)
+            remove_lp_volume = FixedPoint(0)
 
         if self.sample_actions:
             random_roll = self.rng.uniform(0, 1, 2)
@@ -503,7 +518,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
             remove_lp = remove_lp_probability > self.env_config.close_threshold
 
         try:
-            if add_lp:
+            if add_lp and add_lp_volume <= agent_wallet.balance.amount:
                 self.rl_agents[agent_id].add_liquidity(add_lp_volume)
             if remove_lp and remove_lp_volume <= self.rl_agents[agent_id].get_wallet().lp_tokens:
                 self.rl_agents[agent_id].remove_liquidity(remove_lp_volume)
@@ -514,9 +529,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
         except Exception as err:  # pylint: disable=broad-except
             # TODO use logging here
             print(f"Warning: Failed to LP: {repr(err)}")
-            return False
+            trade_success = False
 
-        return True
+        return trade_success
 
     def step(
         self, action_dict: dict[str, np.ndarray]
@@ -570,7 +585,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         self.interactive_hyperdrive.sync_database()
 
         for agent_id, action in action_dict.items():
-            _ = self._apply_action(agent_id=agent_id, action=action)
+            _ = self._apply_action(agent_id, action)
 
         # Run other bots
         # Suppress logging here
@@ -642,29 +657,29 @@ class RayHyperdriveEnv(MultiAgentEnv):
             lp_features = np.zeros(self.num_lp_features)
 
             # Observation data uses floats
-            agent_wallet = self.rl_agents[agent_id].get_positions(coerce_float=True, calc_pnl=True)
+            agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=True, calc_pnl=True)
 
-            if not agent_wallet.empty:
+            if not agent_positions.empty:
                 position_duration = self.interactive_hyperdrive.config.position_duration
                 # We convert timestamp to epoch time here
                 # We keep negative values for time past maturity
                 current_block = self.interactive_hyperdrive.interface.get_current_block()
                 timestamp = self.interactive_hyperdrive.interface.get_block_timestamp(current_block)
-                agent_wallet["normalized_time_remaining"] = (
-                    agent_wallet["maturity_time"] - timestamp
+                agent_positions["normalized_time_remaining"] = (
+                    agent_positions["maturity_time"] - timestamp
                 ) / position_duration
 
-                long_orders = agent_wallet[agent_wallet["token_type"] == "LONG"]
+                long_orders = agent_positions[agent_positions["token_type"] == "LONG"]
                 # Ensure data is the same as the action space
                 long_orders = long_orders.sort_values("maturity_time")
                 long_orders = long_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
 
-                short_orders = agent_wallet[agent_wallet["token_type"] == "SHORT"]
+                short_orders = agent_positions[agent_positions["token_type"] == "SHORT"]
                 # Ensure data is the same as the action space
                 short_orders = short_orders.sort_values("maturity_time")
                 short_orders = short_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
 
-                lp_orders = agent_wallet[agent_wallet["token_type"] == "LP"]
+                lp_orders = agent_positions[agent_positions["token_type"] == "LP"]
                 lp_orders = lp_orders[["token_balance", "pnl"]].values.flatten()
 
                 # Add data to static size arrays
@@ -687,20 +702,20 @@ class RayHyperdriveEnv(MultiAgentEnv):
         agents = agents or self.agents
         # The total delta for this episode
 
-        current_wallet = self.interactive_hyperdrive.get_positions(
+        current_positions = self.interactive_hyperdrive.get_positions(
             show_closed_positions=True, calc_pnl=True, coerce_float=True
         )
         reward = {}
         for agent_id in agents:
             # Filter by agent ID
-            agent_wallet = current_wallet[current_wallet["wallet_address"] == self.rl_agents[agent_id].address]
-            # The agent_wallet shows the pnl of all positions
+            agent_positions = current_positions[current_positions["wallet_address"] == self.rl_agents[agent_id].address]
+            # The agent_positions shows the pnl of all positions
             # Sum across all positions
             # TODO one option here is to only look at base positions instead of sum across all positions.
             # TODO handle the case where pnl calculation doesn't return a number
             # when you can't close the position
 
-            total_pnl = float(agent_wallet["pnl"].sum())
+            total_pnl = float(agent_positions["pnl"].sum())
 
             # reward is in units of base
             # We use the change in pnl as the reward
