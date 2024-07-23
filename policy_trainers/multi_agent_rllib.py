@@ -27,13 +27,13 @@ def run_train():
     policies = [POLICY_PREFIX + str(i) for i in range(env_config.num_agents)]
 
     # TODO: Make all of init() params explicit
-    ray.init(local_mode=True)  # Use local_mode=True for debugging
+    ray.init(local_mode=False)  # Use local_mode=True for debugging
     config: AlgorithmConfig = (
         PPOConfig()
         .environment(env=RayHyperdriveEnv, env_config={"env_config": env_config})
         .api_stack(enable_rl_module_and_learner=True, enable_env_runner_and_connector_v2=True)
         .env_runners(
-            num_env_runners=0,
+            num_env_runners=5,
             num_envs_per_env_runner=1,
             sample_timeout_s=120,
             rollout_fragment_length=50,
