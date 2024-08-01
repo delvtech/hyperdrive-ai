@@ -46,7 +46,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Experiment Config
         position_reward_scale: float = 1
         # Number of RayHyperdriveEnv steps per episode
-        episode_length: int = 200
+        episode_length: int = 50
         # Number of episodes for each training step
         num_episodes_per_update: int = 5
         # Number of training iterations (after rollouts have been collected)
@@ -58,7 +58,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # Hyperdrive Config
         # How much to advance time per step
-        step_advance_time = 2 * 3600  # 2 hours
+        step_advance_time = 8 * 3600  # 8 hours
         # Probability of updating the variable rate
         rate_change_probability: float = 0.1
 
@@ -301,6 +301,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
         self.logger = logging.getLogger()
         super().__init__()
 
+    def __del__(self) -> None:
+        self.chain.cleanup()
+
     def reset(
         self,
         *,
@@ -444,8 +447,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
                             bonds=FixedPoint(position_to_close["token_balance"]),
                         )
             except Exception as err:  # pylint: disable=broad-except
-                # TODO use logging here
-                print(f"Warning: Failed to close {trade_type} trade: {repr(err)}")
+                self.logger.warning(f"Failed to close {trade_type} trade: {repr(err)}")
                 trade_success = False
 
         # Open trades
@@ -492,8 +494,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
                             self.rl_agents[agent_id].open_short(bonds=volume_adjusted)
                     # Base exception here to catch rust errors
                     except BaseException as err:  # pylint: disable=broad-except
-                        # TODO use logging here
-                        print(f"Warning: Failed to open {trade_type} trade: {repr(err)}")
+                        self.logger.warning(f"Failed to open {trade_type} trade: {repr(err)}")
                         trade_success = False
 
         # LP actions
@@ -531,8 +532,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
                 # TODO error handling or check when withdrawal shares are not withdrawable
                 self.rl_agents[agent_id].redeem_withdrawal_share(self.rl_agents[agent_id].get_wallet().withdraw_shares)
         except Exception as err:  # pylint: disable=broad-except
-            # TODO use logging here
-            print(f"Warning: Failed to LP: {repr(err)}")
+            self.logger.warning(f"Failed to LP: {repr(err)}")
             trade_success = False
 
         return trade_success
@@ -584,7 +584,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # TODO: Verify that env_config.episode length is working
         # TODO: _apply_action() is per agent_id, but _get_observations() is for all agents. Make this consistent?
         # TODO: Verify that truncated/terminated are being used correctly here. Do we need self.terminateds?
-        print(f"\nStep {self._step_count} Time: {datetime.now().strftime('%I:%M:%S %p')}")
+        self.logger.info(f"\nStep {self._step_count} Time: {datetime.now().strftime('%I:%M:%S %p')}")
         # Do actions and get truncated status for agents provided, and set the rest to True
         self.interactive_hyperdrive.sync_database()
 
@@ -597,7 +597,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
             try:
                 random_bot.execute_policy_action()
             except BaseException as err:  # pylint: disable=broad-except
-                print(f"Warning: Failed to execute random bot: {repr(err)}")
+                self.logger.warning(f"Failed to execute random bot: {repr(err)}")
                 # We ignore errors in random bots
                 continue
 
@@ -731,6 +731,3 @@ class RayHyperdriveEnv(MultiAgentEnv):
     def render(self) -> None:
         """Renders the environment. No rendering available for hyperdrive env."""
         return None
-
-    def __del__(self) -> None:
-        self.chain.cleanup()

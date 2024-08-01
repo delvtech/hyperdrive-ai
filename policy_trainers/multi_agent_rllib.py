@@ -1,12 +1,12 @@
 """Multi agent rllib policy trainer"""
 
-import os
 from datetime import datetime
 
 import ray
 from ray.rllib.algorithms import AlgorithmConfig
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.tune.logger import pretty_print
+import pathlib
 
 from traiderdaive.ray_environments.ray_hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX, RayHyperdriveEnv
 
@@ -36,7 +36,7 @@ def run_train():
             num_env_runners=5,
             num_envs_per_env_runner=1,
             sample_timeout_s=120,
-            rollout_fragment_length=50,
+            rollout_fragment_length="auto",
         )
         .resources(num_cpus_for_main_process=1, num_gpus=1 if GPU else 0)
         .learners(
@@ -98,10 +98,16 @@ def run_train():
     )
     algo = config.build()
     for i in range(env_config.num_training_loops):
-        print(f"\nTraining Iteration {i}\nTime: {datetime.now().strftime('%I:%M:%S %p')}")
+        print(
+            f"\n-----------------\n"
+            f"Training Iteration {i}\nTime: {datetime.now().strftime('%I:%M:%S %p')}"
+        )
         result = algo.train()
         algo.save()
         print(pretty_print(result))
+        # Remove any tmp files created by anvil
+        anvil_tmp = pathlib.Path("~/.foundry/tmp")
+        anvil_tmp.unlink(missing_ok=True)
     end_time = datetime.now()
     print(f"\nFinished: {end_time.strftime('%I:%M:%S %p')}")
     print(f"({(end_time - start_time).total_seconds() / 60} minutes.)")
