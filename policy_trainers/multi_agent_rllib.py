@@ -1,6 +1,7 @@
 """Multi agent rllib policy trainer"""
 
 from datetime import datetime
+import os
 
 import ray
 from ray.rllib.algorithms import AlgorithmConfig
@@ -27,7 +28,7 @@ def run_train():
     policies = [POLICY_PREFIX + str(i) for i in range(env_config.num_agents)]
 
     # TODO: Make all of init() params explicit
-    ray.init(local_mode=False)  # Use local_mode=True for debugging
+    ray.init(local_mode=False, _temp_dir=os.path.expanduser("~/ray_results/tmp"))  # Use local_mode=True for debugging
     config: AlgorithmConfig = (
         PPOConfig()
         .environment(env=RayHyperdriveEnv, env_config={"env_config": env_config})
@@ -103,9 +104,12 @@ def run_train():
             f"Training Iteration {i}\nTime: {datetime.now().strftime('%I:%M:%S %p')}"
         )
         result = algo.train()
-        algo.save()
         print(pretty_print(result))
+        # TODO: Handle clobbering, and multiple checkpoints
+        save_result = algo.save(checkpoint_dir="./checkpoints/")
+        print(f"Saved checkpoint to: {save_result.checkpoint.path}")
         # Remove any tmp files created by anvil
+        # TODO : Fix this; it's not working
         anvil_tmp = pathlib.Path("~/.foundry/tmp")
         anvil_tmp.unlink(missing_ok=True)
     end_time = datetime.now()
