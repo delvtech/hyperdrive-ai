@@ -120,7 +120,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
         env_config,
     ):
         """Initializes the environment"""
+        print(f"\n\n{'-' * 100}\nINIT CALLED!\n{'-' * 100}\n\n")
         self.worker_index = env_config.worker_index
+        print(f"\n{'-' * 100}\nWorker index: {self.worker_index}\n{'-' * 100}\n\n")
 
         if env_config.get("env_config") is None:
             self.env_config = self.Config()
@@ -155,8 +157,11 @@ class RayHyperdriveEnv(MultiAgentEnv):
         initial_pool_config = LocalHyperdrive.Config()
         self.chain = LocalChain(local_chain_config)
         self.interactive_hyperdrive = LocalHyperdrive(self.chain, initial_pool_config)
+        print(f"\n{self.chain.rpc_uri}\n{self.interactive_hyperdrive.hyperdrive_address}\n")
         # TODO: This might need to be env indexed as well if num_envs_per_runner > 1
-        if self.worker_index == 1:
+
+        print(f"\n{self.eval_mode}\n")
+        if self.eval_mode:
             self.chain.run_dashboard()
 
         # TODO set seed
@@ -590,6 +595,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Do actions and get truncated status for agents provided, and set the rest to True
         self.interactive_hyperdrive.sync_database()
 
+        print(f"Action dict: {action_dict}")
         for agent_id, action in action_dict.items():
             _ = self._apply_action(agent_id, action)
 
@@ -618,6 +624,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
             self.interactive_hyperdrive.set_variable_rate(new_rate)
 
         self.interactive_hyperdrive.sync_database()
+        print(f"{self.interactive_hyperdrive.get_trade_events()}")
 
         observations = self._get_observations(agents=action_dict.keys())
         info = self._get_info(agents=action_dict.keys())
@@ -733,3 +740,6 @@ class RayHyperdriveEnv(MultiAgentEnv):
     def render(self) -> None:
         """Renders the environment. No rendering available for hyperdrive env."""
         return None
+
+    def __del__(self):
+        self.chain.cleanup()
