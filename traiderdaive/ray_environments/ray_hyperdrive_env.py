@@ -147,7 +147,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
             block_timestamp_interval=12,
             db_port=db_port,
             chain_port=chain_port,
-            calc_pnl=False,
+            calc_pnl=self.eval_mode,
             manual_database_sync=True,
             backfill_pool_info=False,
         )
