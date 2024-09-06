@@ -38,6 +38,7 @@ config: AlgorithmConfig = (
 algo = config.build()
 checkpoint_dir = "/Users/wshainin/workspace/DELV/hyperdrive-ai/checkpoints/"
 algo.restore(checkpoint_dir)
+env = algo.workers.local_env_runner.env.env
 # algo = Algorithm.from_checkpoint(checkpoint_dir)
 algo.evaluate()
 print("DONE")
