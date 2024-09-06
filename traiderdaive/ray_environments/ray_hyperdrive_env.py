@@ -415,7 +415,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
             # ordering.
             trade_positions = trade_positions.sort_values("maturity_time")
             num_trade_positions = len(trade_positions)
-            
+
             # Handle closing orders
             # The index of orders here is from oldest to newest
             # TODO (sheng) if we want the rl bot to explicitly learn how to
@@ -471,26 +471,24 @@ class RayHyperdriveEnv(MultiAgentEnv):
                         agent_wallet_balance = self.rl_agents[agent_id].get_wallet().balance.amount
                         if trade_type == TradeTypes.LONG and agent_wallet_balance >= min_tx_amount:
                             # Get the agent's max trade amount
-                            max_long_amount = self.interactive_hyperdrive.interface.calc_max_long(budget=agent_wallet_balance)
+                            max_long_amount = self.interactive_hyperdrive.interface.calc_max_long(
+                                budget=agent_wallet_balance
+                            )
                             # While volume isn't strictly a probability, we interpret it as a value between 0 and 1
                             amount_probability = FixedPoint(expit(open_long_short_actions[trade_type.value, 1]))
                             # Map the probability to be between the min and max transaction amounts
-                            volume_adjusted = (
-                                min_tx_amount
-                                +  amount_probability * (max_long_amount - min_tx_amount)
-                            )
+                            volume_adjusted = min_tx_amount + amount_probability * (max_long_amount - min_tx_amount)
                             self.rl_agents[agent_id].open_long(base=volume_adjusted)
                         elif trade_type == TradeTypes.SHORT and agent_wallet_balance >= min_tx_amount:
                             # Get the agent's max trade amount
                             agent_wallet_balance = self.rl_agents[agent_id].get_wallet().balance.amount
-                            max_short_amount = self.interactive_hyperdrive.interface.calc_max_short(budget=agent_wallet_balance)
+                            max_short_amount = self.interactive_hyperdrive.interface.calc_max_short(
+                                budget=agent_wallet_balance
+                            )
                             # While volume isn't strictly a probability, we interpret it as a value between 0 and 1
                             amount_probability = FixedPoint(expit(open_long_short_actions[trade_type.value, 1]))
                             # Map the probability to be between the min and max transaction amounts
-                            volume_adjusted = (
-                                min_tx_amount
-                                + amount_probability  * (max_short_amount - min_tx_amount)
-                            )
+                            volume_adjusted = min_tx_amount + amount_probability * (max_short_amount - min_tx_amount)
                             self.rl_agents[agent_id].open_short(bonds=volume_adjusted)
                     # Base exception here to catch rust errors
                     except BaseException as err:  # pylint: disable=broad-except
@@ -502,14 +500,18 @@ class RayHyperdriveEnv(MultiAgentEnv):
         lp_actions_expit = expit(lp_actions)
         if agent_wallet.balance.amount >= min_tx_amount:
             add_lp_probability = lp_actions_expit[0]
-            add_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[1]) * (agent_wallet.balance.amount - min_tx_amount)
+            add_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[1]) * (
+                agent_wallet.balance.amount - min_tx_amount
+            )
         else:
             add_lp_probability = np.float64(0)
             add_lp_volume = FixedPoint(0)
 
         if agent_wallet.lp_tokens >= min_tx_amount:
             remove_lp_probability = lp_actions_expit[2]
-            remove_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[3]) * (agent_wallet.lp_tokens - min_tx_amount)
+            remove_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[3]) * (
+                agent_wallet.lp_tokens - min_tx_amount
+            )
         else:
             remove_lp_probability = np.float64(0)
             remove_lp_volume = FixedPoint(0)
