@@ -358,7 +358,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         return observations, info
 
-    def _apply_action(self, agent_id: str, action: np.ndarray) -> bool:
+    def _apply_action(self, agent_id: str, action: np.ndarray) -> list[bool]:
         """Execute the bot action on-chain.
 
         Arguments
@@ -378,7 +378,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # pylint: disable=too-many-branches
         # pylint: disable=too-many-nested-blocks
         # pylint: disable=too-many-statements
-        trade_success = True
+        trade_success = [
+            True,
+        ] * (len(TradeTypes) + 1)
 
         # The actual min txn amount is a function of pool state. Without helper functions, we simply add a safe amount.
         min_tx_amount = self.interactive_hyperdrive.config.minimum_transaction_amount * FixedPoint("2")
@@ -413,7 +415,67 @@ class RayHyperdriveEnv(MultiAgentEnv):
         agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=False)
 
         # Closing trades
-        for trade_type in TradeTypes:
+        close_trade_success = self._apply_close_trades(agent_id, close_long_short_actions, agent_positions)
+        trade_success[: len(close_trade_success)] = close_trade_success
+        # Open trades
+        open_trade_success = self._apply_open_trades(agent_id, min_tx_amount, open_long_short_actions, agent_positions)
+        trade_success[len(close_trade_success) : len(open_trade_success)] = open_trade_success
+        # LP trade
+        trade_success[-1] = self._apply_lp_trades(agent_id, min_tx_amount, lp_actions)
+
+        return trade_success
+
+    def _apply_lp_trades(self, agent_id, min_tx_amount, lp_actions) -> bool:
+        """Apply the LP trades."""
+        trade_success = True
+        agent_wallet = self.rl_agents[agent_id].get_wallet()
+        lp_actions_expit = expit(lp_actions)
+        if agent_wallet.balance.amount >= min_tx_amount:
+            add_lp_probability = lp_actions_expit[0]
+            add_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[1]) * (
+                agent_wallet.balance.amount - min_tx_amount
+            )
+        else:
+            add_lp_probability = np.float64(0)
+            add_lp_volume = FixedPoint(0)
+
+        if agent_wallet.lp_tokens >= min_tx_amount:
+            remove_lp_probability = lp_actions_expit[2]
+            remove_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[3]) * (
+                agent_wallet.lp_tokens - min_tx_amount
+            )
+        else:
+            remove_lp_probability = np.float64(0)
+            remove_lp_volume = FixedPoint(0)
+
+        if self.sample_actions:
+            random_roll = self.rng.uniform(0, 1, 2)
+            add_lp = random_roll[0] <= add_lp_probability
+            remove_lp = random_roll[1] <= remove_lp_probability
+        else:
+            add_lp = add_lp_probability > self.env_config.open_threshold
+            remove_lp = remove_lp_probability > self.env_config.close_threshold
+
+        try:
+            if add_lp and add_lp_volume <= agent_wallet.balance.amount:
+                self.rl_agents[agent_id].add_liquidity(add_lp_volume)
+            if remove_lp and remove_lp_volume <= self.rl_agents[agent_id].get_wallet().lp_tokens:
+                self.rl_agents[agent_id].remove_liquidity(remove_lp_volume)
+            # Always try and remove withdrawal shares
+            if self.rl_agents[agent_id].get_wallet().withdraw_shares > 0:
+                # TODO error handling or check when withdrawal shares are not withdrawable
+                self.rl_agents[agent_id].redeem_withdrawal_share(self.rl_agents[agent_id].get_wallet().withdraw_shares)
+        except Exception as err:  # pylint: disable=broad-except
+            self.logger.warning(f"Failed to LP: {repr(err)}")
+            trade_success = False
+        return trade_success
+
+    def _apply_close_trades(self, agent_id, close_long_short_actions, agent_positions) -> list[bool]:
+        """Close trades."""
+        trade_success = [
+            True,
+        ] * len(TradeTypes)
+        for i, trade_type in enumerate(TradeTypes):
             # Get agent positions for this trade type
             trade_positions = agent_positions[agent_positions["token_type"] == trade_type.name]
 
@@ -455,10 +517,15 @@ class RayHyperdriveEnv(MultiAgentEnv):
                         )
             except Exception as err:  # pylint: disable=broad-except
                 self.logger.warning(f"Failed to close {trade_type} trade: {repr(err)}")
-                trade_success = False
+                trade_success[i] = False
+        return trade_success
 
-        # Open trades
-        for trade_type in TradeTypes:
+    def _apply_open_trades(self, agent_id, min_tx_amount, open_long_short_actions, agent_positions) -> list[bool]:
+        """Apply open trades."""
+        trade_success = [
+            True,
+        ] * len(TradeTypes)
+        for i, trade_type in enumerate(TradeTypes):
             # Get agent positions again after closing
             trade_positions = agent_positions[agent_positions["token_type"] == trade_type.name]
             num_trade_positions = len(trade_positions)
@@ -500,50 +567,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
                     # Base exception here to catch rust errors
                     except BaseException as err:  # pylint: disable=broad-except
                         self.logger.warning(f"Failed to open {trade_type} trade: {repr(err)}")
-                        trade_success = False
-
-        # LP actions
-        agent_wallet = self.rl_agents[agent_id].get_wallet()
-        lp_actions_expit = expit(lp_actions)
-        if agent_wallet.balance.amount >= min_tx_amount:
-            add_lp_probability = lp_actions_expit[0]
-            add_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[1]) * (
-                agent_wallet.balance.amount - min_tx_amount
-            )
-        else:
-            add_lp_probability = np.float64(0)
-            add_lp_volume = FixedPoint(0)
-
-        if agent_wallet.lp_tokens >= min_tx_amount:
-            remove_lp_probability = lp_actions_expit[2]
-            remove_lp_volume = min_tx_amount + FixedPoint(lp_actions_expit[3]) * (
-                agent_wallet.lp_tokens - min_tx_amount
-            )
-        else:
-            remove_lp_probability = np.float64(0)
-            remove_lp_volume = FixedPoint(0)
-
-        if self.sample_actions:
-            random_roll = self.rng.uniform(0, 1, 2)
-            add_lp = random_roll[0] <= add_lp_probability
-            remove_lp = random_roll[1] <= remove_lp_probability
-        else:
-            add_lp = add_lp_probability > self.env_config.open_threshold
-            remove_lp = remove_lp_probability > self.env_config.close_threshold
-
-        try:
-            if add_lp and add_lp_volume <= agent_wallet.balance.amount:
-                self.rl_agents[agent_id].add_liquidity(add_lp_volume)
-            if remove_lp and remove_lp_volume <= self.rl_agents[agent_id].get_wallet().lp_tokens:
-                self.rl_agents[agent_id].remove_liquidity(remove_lp_volume)
-            # Always try and remove withdrawal shares
-            if self.rl_agents[agent_id].get_wallet().withdraw_shares > 0:
-                # TODO error handling or check when withdrawal shares are not withdrawable
-                self.rl_agents[agent_id].redeem_withdrawal_share(self.rl_agents[agent_id].get_wallet().withdraw_shares)
-        except Exception as err:  # pylint: disable=broad-except
-            self.logger.warning(f"Failed to LP: {repr(err)}")
-            trade_success = False
-
+                        trade_success[i] = False
         return trade_success
 
     def step(
