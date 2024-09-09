@@ -1,13 +1,13 @@
 """Multi agent rllib policy trainer"""
 
-from datetime import datetime
 import os
+import pathlib
+from datetime import datetime
 
 import ray
 from ray.rllib.algorithms import AlgorithmConfig
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.tune.logger import pretty_print
-import pathlib
 
 from traiderdaive.ray_environments.ray_hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX, RayHyperdriveEnv
 
