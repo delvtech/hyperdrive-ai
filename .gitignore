@@ -10,7 +10,7 @@
 **/.traider_models
 *.log
 */profiling/*
-checkpoints/
+**/checkpoints/*
 
 __pycache__
 
