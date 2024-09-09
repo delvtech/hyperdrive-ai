@@ -9,11 +9,10 @@ from typing import Any
 
 import gymnasium as gym
 import numpy as np
-from fixedpointmath import FixedPoint
-from gymnasium import spaces
-
 from agent0.core.hyperdrive.interactive import LocalChain, LocalHyperdrive
 from agent0.core.hyperdrive.policies import PolicyZoo
+from fixedpointmath import FixedPoint
+from gymnasium import spaces
 
 # Global suppression of warnings, TODO fix
 warnings.filterwarnings("ignore")
@@ -122,7 +121,7 @@ class SimpleHyperdriveEnv(gym.Env):
                     # TODO set the seed per random bot here for reproducability
                     policy_config=PolicyZoo.random_hold.Config(
                         trade_chance=FixedPoint("0.8"),
-                        max_open_positions=1000,
+                        max_open_positions_per_pool=1000,
                     ),
                     name="random_bot_" + str(i),
                 )
