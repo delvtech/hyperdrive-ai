@@ -99,14 +99,13 @@ def run_train():
     )
     algo = config.build()
     for i in range(env_config.num_training_loops):
-        print(
-            f"\n-----------------\n"
-            f"Training Iteration {i}\nTime: {datetime.now().strftime('%I:%M:%S %p')}"
-        )
+        timestamp = datetime.now().strftime("%m/%d/%Y, %I:%M:%S %p")
+        print(f"\n-----------------\nTraining Iteration {i}\nTime: {timestamp}")
         result = algo.train()
         print(pretty_print(result))
-        # TODO: Handle clobbering, and multiple checkpoints
-        save_result = algo.save(checkpoint_dir="./checkpoints/")
+        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+        checkpoint_dir = f"{os.path.dirname(os.path.dirname(os.path.realpath(__file__)))}/checkpoints/{timestamp}"
+        save_result = algo.save(checkpoint_dir=checkpoint_dir)
         print(f"Saved checkpoint to: {save_result.checkpoint.path}")
         # Remove any tmp files created by anvil
         # TODO : Fix this; it's not working
