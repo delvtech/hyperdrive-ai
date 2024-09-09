@@ -132,6 +132,10 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
         # Do actions and get truncated status for agents provided, and set the rest to True
         self.interactive_hyperdrive.sync_database()
 
+        # Run apply action twice
+        for agent_id, action in action_dict.items():
+            _ = self._apply_action(agent_id, action)
+
         for agent_id, action in action_dict.items():
             _ = self._apply_action(agent_id, action)
 
@@ -148,18 +152,6 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
         # We minimize time between bot making an action, so we advance time after actions have been made
         # but before the observation
         self.chain.advance_time(self.env_config.step_advance_time, create_checkpoints=True)
-
-        # Update variable rate with probability Config.rate_change_probability
-        # TODO: Parameterize distribution and clip
-        if np.random.rand() < self.env_config.rate_change_probability:
-            current_rate = self.interactive_hyperdrive.interface.get_variable_rate()
-            # narrow type
-            assert current_rate is not None
-            # new rate is random & between 10x and 0.1x the current rate
-            new_rate = current_rate * FixedPoint(
-                np.minimum(10.0, np.maximum(0.1, np.random.normal(loc=1.0, scale=0.01)))
-            )
-            self.interactive_hyperdrive.set_variable_rate(new_rate)
 
         self.interactive_hyperdrive.sync_database()
 
