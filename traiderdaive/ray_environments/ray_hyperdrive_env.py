@@ -199,7 +199,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
                     # TODO set the seed per random bot here for reproducibility
                     policy_config=PolicyZoo.random_hold.Config(
                         trade_chance=FixedPoint("0.8"),
-                        max_open_positions=1000,
+                        max_open_positions_per_pool=1000,
                         # TODO omitting rng_seed results in the same random generators
                         # for all bots, fix
                         rng_seed=self.env_config.num_random_bots + i,
@@ -611,6 +611,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # TODO: Parameterize distribution and clip
         if np.random.rand() < self.env_config.rate_change_probability:
             current_rate = self.interactive_hyperdrive.interface.get_variable_rate()
+            # narrow type
+            assert current_rate is not None
             # new rate is random & between 10x and 0.1x the current rate
             new_rate = current_rate * FixedPoint(
                 np.minimum(10.0, np.maximum(0.1, np.random.normal(loc=1.0, scale=0.01)))
@@ -650,7 +652,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Get the latest pool state feature from the db
         pool_state_df = self.interactive_hyperdrive.get_pool_info(coerce_float=True)
         pool_state_df = pool_state_df[self.env_config.pool_info_columns].iloc[-1].astype(float)
-        pool_features = pool_state_df.values
+        pool_features = pool_state_df.values.astype(np.float64)
         # TODO can also add other features, e.g., opening spot price
 
         out_obs = {}
