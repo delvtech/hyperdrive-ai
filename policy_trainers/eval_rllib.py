@@ -25,8 +25,9 @@ config: AlgorithmConfig = (
     .evaluation(evaluation_duration=1, evaluation_duration_unit="episodes")
 )
 algo = config.build()
-checkpoint_name = "2024_09_09_00_00_00"
-checkpoint_dir = f"{os.path.dirname(os.path.dirname(os.path.realpath(__file__)))}/checkpoints/{checkpoint_name}"
+run_timestamp = "2024_09_09_00_00_00"
+idx = "000001"
+checkpoint_dir = f"{os.path.dirname(os.path.dirname(os.path.realpath(__file__)))}/checkpoints/{run_timestamp}/{idx}"
 algo.restore(checkpoint_dir)
 # env = algo.workers.local_env_runner.env.env
 algo.evaluate()

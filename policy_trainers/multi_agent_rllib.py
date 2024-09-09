@@ -98,13 +98,14 @@ def run_train():
         )
     )
     algo = config.build()
+    run_timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     for i in range(env_config.num_training_loops):
         timestamp = datetime.now().strftime("%m/%d/%Y, %I:%M:%S %p")
         print(f"\n-----------------\nTraining Iteration {i}\nTime: {timestamp}")
         result = algo.train()
         print(pretty_print(result))
-        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        checkpoint_dir = f"{os.path.dirname(os.path.dirname(os.path.realpath(__file__)))}/checkpoints/{timestamp}"
+        project_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+        checkpoint_dir = f"{project_dir}/checkpoints/{run_timestamp}/{i:06d}"
         save_result = algo.save(checkpoint_dir=checkpoint_dir)
         print(f"Saved checkpoint to: {save_result.checkpoint.path}")
         # Remove any tmp files created by anvil
