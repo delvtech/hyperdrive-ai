@@ -248,20 +248,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         #    add liquidity volume,
         # ]
 
-        # (longs, shorts) -> close_order_i(logit), new_order(logit), volume)
-        # (lp) -> add_lp_order(logit), volume_add_lp, remove_lp_order(logit), volume_remove_lp)
-        self._action_space_in_preferred_format = True
-        self.action_space = spaces.Dict(
-            {
-                agent_id: spaces.Box(
-                    low=-1e2,
-                    high=1e2,
-                    dtype=np.float64,
-                    shape=(len(TradeTypes) * (self.env_config.max_positions_per_type + 2) + 4,),
-                )
-                for agent_id in self.agents
-            }
-        )
+        self.create_action_space()
 
         # Observation space is
         # TODO add more features
@@ -306,6 +293,23 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
     def __del__(self) -> None:
         self.chain.cleanup()
+
+    def create_action_space(self) -> None:
+        """Create the action space object & assign it to self."""
+        # (longs, shorts) -> close_order_i(logit), new_order(logit), volume)
+        # (lp) -> add_lp_order(logit), volume_add_lp, remove_lp_order(logit), volume_remove_lp)
+        self._action_space_in_preferred_format = True
+        self.action_space = spaces.Dict(
+            {
+                agent_id: spaces.Box(
+                    low=-1e2,
+                    high=1e2,
+                    dtype=np.float64,
+                    shape=(len(TradeTypes) * (self.env_config.max_positions_per_type + 2) + 4,),
+                )
+                for agent_id in self.agents
+            }
+        )
 
     def reset(
         self,
