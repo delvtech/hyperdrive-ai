@@ -5,5 +5,4 @@
 -e ../agent0[all]
 gymnasium
 scipy
-stable-baselines3
 ray[rllib]
