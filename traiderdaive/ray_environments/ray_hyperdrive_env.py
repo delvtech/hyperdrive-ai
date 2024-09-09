@@ -378,9 +378,10 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # pylint: disable=too-many-branches
         # pylint: disable=too-many-nested-blocks
         # pylint: disable=too-many-statements
+        # Length is 2 * len(TradeTypes) for open/close long/short + 1 for LP
         trade_success = [
             True,
-        ] * (len(TradeTypes) + 1)
+        ] * (2 * len(TradeTypes) + 1)
 
         # The actual min txn amount is a function of pool state. Without helper functions, we simply add a safe amount.
         min_tx_amount = self.interactive_hyperdrive.config.minimum_transaction_amount * FixedPoint("2")
