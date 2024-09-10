@@ -76,3 +76,26 @@ class RandomNormalVariableRate(VariableRatePolicy):
         return current_rate * FixedPoint(
             np.minimum(10.0, np.maximum(0.1, self.config.rng.normal(loc=self.config.loc, scale=self.config.scale)))
         )
+
+
+class RandomWalk(RandomNormalVariableRate):
+    @dataclass(kw_only=True)
+    class Config(RandomNormalVariableRate.Config):
+        loc: float = 1.0
+        scale: float = 0.01
+
+
+class Transition(RandomNormalVariableRate):
+    @dataclass(kw_only=True)
+    class Config(RandomNormalVariableRate.Config):
+        rate_change_probability: float = 0.01
+        loc: float = 1.0
+        scale: float = 0.1
+
+
+class Swings(RandomNormalVariableRate):
+    @dataclass(kw_only=True)
+    class Config(RandomNormalVariableRate.Config):
+        rate_change_probability: float = 0.1
+        loc: float = 1.0
+        scale: float = 0.1
