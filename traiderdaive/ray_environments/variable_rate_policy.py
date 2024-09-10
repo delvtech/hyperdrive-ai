@@ -81,6 +81,7 @@ class RandomNormalVariableRate(VariableRatePolicy):
 class RandomWalk(RandomNormalVariableRate):
     @dataclass(kw_only=True)
     class Config(RandomNormalVariableRate.Config):
+        rate_change_probability: float = 0.1
         loc: float = 1.0
         scale: float = 0.01
 
