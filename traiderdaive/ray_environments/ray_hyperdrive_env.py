@@ -729,6 +729,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
                     new_pnl = float(agent_positions["pnl"].sum())
                     reward[agent_id] = new_pnl - self._prev_pnls[agent_id]
                     self._prev_pnls[agent_id] = new_pnl
+                case "total_pnl":
+                    # We use the absolute pnl as the reward
+                    reward[agent_id] = float(agent_positions["pnl"].sum())
                 case "realized_value":
                     # We use the absolute realized value as the reward
                     total_realized_value = float(agent_positions["realized_value"].sum())
