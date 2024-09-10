@@ -11,6 +11,7 @@ from typing import Any, Iterable
 
 import numpy as np
 from agent0 import LocalChain, LocalHyperdrive, PolicyZoo
+from agent0.ethpy.base import get_account_balance
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
@@ -702,7 +703,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         return out_obs
 
-    def _calculate_rewards(self, agents: Iterable[str] | None = None) -> dict[str, float]:
+    def _calculate_rewards(
+        self, agents: Iterable[str] | None = None, reward_selector: str = "total_value"
+    ) -> dict[str, float]:
         agents = agents or self.agents
         # The total delta for this episode
 
@@ -713,19 +716,29 @@ class RayHyperdriveEnv(MultiAgentEnv):
         for agent_id in agents:
             # Filter by agent ID
             agent_positions = current_positions[current_positions["wallet_address"] == self.rl_agents[agent_id].address]
-            # The agent_positions shows the pnl of all positions
-            # Sum across all positions
-            # TODO one option here is to only look at base positions instead of sum across all positions.
-            # TODO handle the case where pnl calculation doesn't return a number
-            # when you can't close the position
 
-            total_pnl = float(agent_positions["pnl"].sum())
-
-            # reward is in units of base
-            # We use the change in pnl as the reward
-            reward[agent_id] = total_pnl - self._prev_pnls[agent_id]
-            self._prev_pnls[agent_id] = total_pnl
-
+            # Reward is in units of base
+            match reward_selector:
+                case "delta_pnl":
+                    # We use the change in pnl as the reward
+                    # The agent_positions shows the pnl of all positions
+                    # Sum across all positions
+                    # TODO one option here is to only look at base positions instead of sum across all positions.
+                    # TODO handle the case where pnl calculation doesn't return a number
+                    # when you can't close the position
+                    new_pnl = float(agent_positions["pnl"].sum())
+                    reward[agent_id] = new_pnl - self._prev_pnls[agent_id]
+                    self._prev_pnls[agent_id] = new_pnl
+                case "realized_value":
+                    # We use the absolute realized value as the reward
+                    total_realized_value = float(agent_positions["realized_value"].sum())
+                    reward[agent_id] = total_realized_value
+                case "total_value":
+                    # We use the absolute realized value and the eth balance as the reward
+                    total_realized_value = float(agent_positions["realized_value"].sum())
+                    agent_eth_balance = get_account_balance(self.chain._web3, self.rl_agents[agent_id].address)
+                    assert agent_eth_balance is not None  # type narrowing
+                    reward[agent_id] = total_realized_value + agent_eth_balance
         return reward
 
     def render(self) -> None:
