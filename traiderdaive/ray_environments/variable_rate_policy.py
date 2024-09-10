@@ -91,7 +91,7 @@ class Transition(RandomNormalVariableRate):
     class Config(RandomNormalVariableRate.Config):
         rate_change_probability: float = 0.01
         loc: float = 1.0
-        scale: float = 0.1
+        scale: float = 1.0
 
 
 class Swings(RandomNormalVariableRate):
