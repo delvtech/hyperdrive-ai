@@ -16,6 +16,8 @@ from gymnasium import spaces
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from scipy.special import expit
 
+from .variable_rate_policy import RandomNormalVariableRate, VariableRatePolicy
+
 AGENT_PREFIX = "agent"
 POLICY_PREFIX = "policy"
 
@@ -59,8 +61,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Hyperdrive Config
         # How much to advance time per step
         step_advance_time = 8 * 3600  # 8 hours
-        # Probability of updating the variable rate
-        rate_change_probability: float = 0.1
+
+        variable_rate_policy: VariableRatePolicy = field(default=RandomNormalVariableRate())
 
         # RL Agents Config
         num_agents: int = 4
@@ -609,14 +611,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # Update variable rate with probability Config.rate_change_probability
         # TODO: Parameterize distribution and clip
-        if np.random.rand() < self.env_config.rate_change_probability:
-            current_rate = self.interactive_hyperdrive.interface.get_variable_rate()
-            # narrow type
-            assert current_rate is not None
-            # new rate is random & between 10x and 0.1x the current rate
-            new_rate = current_rate * FixedPoint(
-                np.minimum(10.0, np.maximum(0.1, np.random.normal(loc=1.0, scale=0.01)))
-            )
+        if self.env_config.variable_rate_policy.do_change_rate():
+            new_rate = self.env_config.variable_rate_policy.get_new_rate(self.interactive_hyperdrive.interface)
             self.interactive_hyperdrive.set_variable_rate(new_rate)
 
         self.interactive_hyperdrive.sync_database()
