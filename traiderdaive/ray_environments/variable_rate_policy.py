@@ -173,5 +173,3 @@ class RandomRatePolicy(VariableRatePolicy):
     def get_new_rate(self, interface: HyperdriveReadInterface) -> FixedPoint:
         assert self.active_policy is not None
         return self.active_policy.get_new_rate(interface)
-
-    pass
