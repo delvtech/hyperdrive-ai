@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
 import pandas as pd
 
-from ..ray_hyperdrive_env import RayHyperdriveEnv
+if TYPE_CHECKING:
+    from ..ray_hyperdrive_env import RayHyperdriveEnv
 
 
 class BaseReward:

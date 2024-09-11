@@ -7,7 +7,7 @@ import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Iterable, Type
+from typing import TYPE_CHECKING, Any, Iterable, Type
 
 import numpy as np
 from agent0 import LocalChain, LocalHyperdrive, PolicyZoo
@@ -17,8 +17,10 @@ from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from scipy.special import expit
 
 from .rewards import DeltaPnl
-from .rewards.base_reward import BaseReward
 from .variable_rate_policy import RandomNormalVariableRate, VariableRatePolicy
+
+if TYPE_CHECKING:
+    from .rewards.base_reward import BaseReward
 
 AGENT_PREFIX = "agent"
 POLICY_PREFIX = "policy"
