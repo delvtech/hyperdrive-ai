@@ -293,11 +293,12 @@ class RayHyperdriveEnv(MultiAgentEnv):
         self._prev_pnls: dict[str, float] = {agent_id: 0.0 for agent_id in self.agents}
         self._step_count = 0
 
-        # instantiate reward class
-        self.reward = self.env_config.reward_policy(self)
         # setup logger
         self.logger = logging.getLogger()
         super().__init__()
+
+        # Setup the reward
+        self.reward = self.env_config.reward_policy(env=self)
 
     def __del__(self) -> None:
         self.chain.cleanup()
