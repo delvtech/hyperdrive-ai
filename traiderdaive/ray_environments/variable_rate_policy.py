@@ -1,7 +1,7 @@
 """Defining policy classes for controlling variable rates."""
 
 from dataclasses import dataclass
-from typing import ClassVar, Sequence, Type
+from typing import Sequence, Type
 
 import numpy as np
 from agent0.ethpy.hyperdrive import HyperdriveReadInterface
