@@ -158,6 +158,7 @@ class RandomRatePolicy(VariableRatePolicy):
         assert isinstance(self.config, RandomRatePolicy.Config)
         # rng.choice has issues mapping list of types to array like
         active_policy_class: Type[VariableRatePolicy] = self.rng.choice(self.config.policies)  # type: ignore
+        # TODO: Allow user to specify configs for each option in the policies list
         self.active_policy = active_policy_class(active_policy_class.Config(), self.rng)
         print(f"Using {self.active_policy}")
 
