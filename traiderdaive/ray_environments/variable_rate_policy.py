@@ -1,5 +1,6 @@
 """Defining policy classes for controlling variable rates."""
 
+import logging
 from dataclasses import dataclass
 from typing import Sequence, Type
 
@@ -12,26 +13,23 @@ from numpy.random import Generator
 class VariableRatePolicy:
     @dataclass(kw_only=True)
     class Config:
-        # RNG config
-        rng_seed: int | None = None
-        rng: Generator | None = None
         rate_change_probability: float = 0.1
-
-        def __post_init__(self):
-            """Create the random number generator if not set."""
-            if self.rng is None:
-                self.rng = np.random.default_rng(self.rng_seed)
 
     def __init__(self, config: Config | None = None) -> None:
         if config is None:
             config = self.Config()
         self.config = config
 
-    def do_change_rate(self) -> bool:
+    def do_change_rate(self, rng: Generator) -> bool:
         """Function defining when to change the rate.
 
         This function gets called every `step`, and returns `True` if the rate should be changed.
         The default behavior is to change the rate based on `rate_change_probability`.
+
+        Arguments
+        ---------
+        rng: Generator
+            The random number generator to use.
 
         Returns
         -------
@@ -39,18 +37,19 @@ class VariableRatePolicy:
             Whether or not to change the rate
         """
         # Type narrowing
-        assert self.config.rng is not None
-        if self.config.rng.random() < self.config.rate_change_probability:
+        if rng.random() < self.config.rate_change_probability:
             return True
         return False
 
-    def get_new_rate(self, interface: HyperdriveReadInterface) -> FixedPoint:
+    def get_new_rate(self, interface: HyperdriveReadInterface, rng: Generator) -> FixedPoint:
         """Function defining behavior of how to change the variable rate.
 
         Arguments
         ---------
         interface: HyperdriveReadInterface
             The interface to the hyperdrive.
+        rng: Generator
+            The random number generator to use.
 
         Returns
         -------
@@ -59,10 +58,15 @@ class VariableRatePolicy:
         """
         raise NotImplementedError
 
-    def reset(self) -> None:
+    def reset(self, rng: Generator) -> None:
         """Resets the policy.
 
         This function gets called whenever the environment's `reset` is called.
+
+        Arguments
+        ---------
+        rng: Generator
+            The random number generator to use.
         """
         # Default behavior is no-op
 
@@ -73,16 +77,15 @@ class RandomNormalVariableRate(VariableRatePolicy):
         loc: float = 1.0
         scale: float = 0.01
 
-    def get_new_rate(self, interface: HyperdriveReadInterface) -> FixedPoint:
+    def get_new_rate(self, interface: HyperdriveReadInterface, rng: Generator) -> FixedPoint:
         # Type narrow
         assert isinstance(self.config, RandomNormalVariableRate.Config)
-        assert self.config.rng is not None
         current_rate = interface.get_variable_rate()
         # narrow type
         assert current_rate is not None
         # new rate is random & between 10x and 0.1x the current rate
         return current_rate * FixedPoint(
-            np.minimum(10.0, np.maximum(0.1, self.config.rng.normal(loc=self.config.loc, scale=self.config.scale)))
+            np.minimum(10.0, np.maximum(0.1, rng.normal(loc=self.config.loc, scale=self.config.scale)))
         )
 
 
@@ -117,14 +120,12 @@ class Ramp(VariableRatePolicy):
         rate_change_probability = 1
         rate_change_delta = FixedPoint(0.001)
 
-    def get_new_rate(self, interface: HyperdriveReadInterface) -> FixedPoint:
+    def get_new_rate(self, interface: HyperdriveReadInterface, rng: Generator) -> FixedPoint:
         # Type narrow
         assert isinstance(self.config, Ramp.Config)
-        assert self.config.rng is not None
         current_rate = interface.get_variable_rate()
         # narrow type
         assert current_rate is not None
-        # new rate is random & between 10x and 0.1x the current rate
         return current_rate + self.config.rate_change_delta
 
 
@@ -157,19 +158,18 @@ class RandomRatePolicy(VariableRatePolicy):
         super().__init__(config)
         self.active_policy: VariableRatePolicy | None = None
 
-    def reset(self):
+    def reset(self, rng: Generator) -> None:
         # In reset, we select a random policy to use
-        assert self.config.rng is not None
         assert isinstance(self.config, RandomRatePolicy.Config)
         # rng.choice has issues mapping list of types to array like
-        active_policy_class: Type[VariableRatePolicy] = self.config.rng.choice(self.config.policies)  # type: ignore
-        self.active_policy = active_policy_class(active_policy_class.Config(rng=self.config.rng))
-        print(f"Using {self.active_policy}")
+        active_policy_class: Type[VariableRatePolicy] = rng.choice(self.config.policies)  # type: ignore
+        self.active_policy = active_policy_class()
+        logging.info(f"Using {self.active_policy}")
 
-    def do_change_rate(self) -> bool:
+    def do_change_rate(self, rng: Generator) -> bool:
         assert self.active_policy is not None
-        return self.active_policy.do_change_rate()
+        return self.active_policy.do_change_rate(rng)
 
-    def get_new_rate(self, interface: HyperdriveReadInterface) -> FixedPoint:
+    def get_new_rate(self, interface: HyperdriveReadInterface, rng: Generator) -> FixedPoint:
         assert self.active_policy is not None
-        return self.active_policy.get_new_rate(interface)
+        return self.active_policy.get_new_rate(interface, rng)
