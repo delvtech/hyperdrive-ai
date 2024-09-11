@@ -12,20 +12,15 @@ from numpy.random import Generator
 class VariableRatePolicy:
     @dataclass(kw_only=True)
     class Config:
-        # RNG config
-        rng_seed: int | None = None
-        rng: Generator | None = None
         rate_change_probability: float = 0.1
 
-        def __post_init__(self):
-            """Create the random number generator if not set."""
-            if self.rng is None:
-                self.rng = np.random.default_rng(self.rng_seed)
-
-    def __init__(self, config: Config | None = None) -> None:
+    def __init__(self, config: Config | None = None, rng: Generator | None = None) -> None:
         if config is None:
             config = self.Config()
         self.config = config
+        if rng is None:
+            rng = np.random.default_rng()
+        self.rng = rng
 
     def do_change_rate(self) -> bool:
         """Function defining when to change the rate.
@@ -39,8 +34,8 @@ class VariableRatePolicy:
             Whether or not to change the rate
         """
         # Type narrowing
-        assert self.config.rng is not None
-        if self.config.rng.random() < self.config.rate_change_probability:
+        assert self.rng is not None
+        if self.rng.random() < self.config.rate_change_probability:
             return True
         return False
 
@@ -76,13 +71,13 @@ class RandomNormalVariableRate(VariableRatePolicy):
     def get_new_rate(self, interface: HyperdriveReadInterface) -> FixedPoint:
         # Type narrow
         assert isinstance(self.config, RandomNormalVariableRate.Config)
-        assert self.config.rng is not None
+        assert self.rng is not None
         current_rate = interface.get_variable_rate()
         # narrow type
         assert current_rate is not None
         # new rate is random & between 10x and 0.1x the current rate
         return current_rate * FixedPoint(
-            np.minimum(10.0, np.maximum(0.1, self.config.rng.normal(loc=self.config.loc, scale=self.config.scale)))
+            np.minimum(10.0, np.maximum(0.1, self.rng.normal(loc=self.config.loc, scale=self.config.scale)))
         )
 
 
@@ -120,7 +115,7 @@ class Ramp(VariableRatePolicy):
     def get_new_rate(self, interface: HyperdriveReadInterface) -> FixedPoint:
         # Type narrow
         assert isinstance(self.config, Ramp.Config)
-        assert self.config.rng is not None
+        assert self.rng is not None
         current_rate = interface.get_variable_rate()
         # narrow type
         assert current_rate is not None
@@ -153,17 +148,17 @@ class RandomRatePolicy(VariableRatePolicy):
             NegativeRamp,
         )
 
-    def __init__(self, config: Config | None = None):
-        super().__init__(config)
+    def __init__(self, config: Config | None = None, rng: Generator | None = None) -> None:
+        super().__init__(config, rng)
         self.active_policy: VariableRatePolicy | None = None
 
     def reset(self):
         # In reset, we select a random policy to use
-        assert self.config.rng is not None
+        assert self.rng is not None
         assert isinstance(self.config, RandomRatePolicy.Config)
         # rng.choice has issues mapping list of types to array like
-        active_policy_class: Type[VariableRatePolicy] = self.config.rng.choice(self.config.policies)  # type: ignore
-        self.active_policy = active_policy_class(active_policy_class.Config(rng=self.config.rng))
+        active_policy_class: Type[VariableRatePolicy] = self.rng.choice(self.config.policies)  # type: ignore
+        self.active_policy = active_policy_class(active_policy_class.Config(), self.rng)
         print(f"Using {self.active_policy}")
 
     def do_change_rate(self) -> bool:

@@ -68,7 +68,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # Reward and variable rate policy
         reward_policy: Type[BaseReward] = field(default=DeltaPnl)
-        variable_rate_policy: VariableRatePolicy = field(default=RandomNormalVariableRate())
+        variable_rate_policy: Type[VariableRatePolicy] = field(default=RandomNormalVariableRate)
+        variable_rate_policy_config: VariableRatePolicy.Config = field(default=RandomNormalVariableRate.Config())
 
         # RL Agents Config
         num_agents: int = 4
@@ -167,8 +168,14 @@ class RayHyperdriveEnv(MultiAgentEnv):
         if self.eval_mode:
             self.chain.run_dashboard()
 
-        # TODO set seed
-        self.rng = np.random.default_rng()
+        # Instantiate the random number generator
+        random_seed = np.random.normal(0, 1, 10) + self.worker_index
+        self.rng = np.random.default_rng(random_seed)
+
+        # Instantiate the variable rate policy
+        self.variable_rate_policy = self.env_config.variable_rate_policy(
+            self.env_config.variable_rate_policy_config, self.rng
+        )
 
         # Define the rl agents
         self.rl_agents = {
@@ -295,6 +302,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # setup logger
         self.logger = logging.getLogger()
+        self.logger.info("rng seed: " + str(random_seed))
         super().__init__()
 
         # Setup the reward
@@ -362,7 +370,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         self.truncateds = set()
 
         # Call reset on variable rate policy
-        self.env_config.variable_rate_policy.reset()
+        self.variable_rate_policy.reset()
 
         # Get first observation and info
         observations = self._get_observations()
@@ -653,8 +661,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # Update variable rate with probability Config.rate_change_probability
         # TODO: Parameterize distribution and clip
-        if self.env_config.variable_rate_policy.do_change_rate():
-            new_rate = self.env_config.variable_rate_policy.get_new_rate(self.interactive_hyperdrive.interface)
+        if self.variable_rate_policy.do_change_rate():
+            new_rate = self.variable_rate_policy.get_new_rate(self.interactive_hyperdrive.interface)
             self.interactive_hyperdrive.set_variable_rate(new_rate)
 
         self.interactive_hyperdrive.sync_database()

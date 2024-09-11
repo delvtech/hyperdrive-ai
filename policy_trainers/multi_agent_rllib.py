@@ -31,9 +31,12 @@ def run_train():
     reward = TotalRealizedValue
 
     # Rate policy
-    rate_policy = RandomRatePolicy()
+    rate_policy = RandomRatePolicy
+    rate_policy_config = RandomRatePolicy.Config()
 
-    env_config = RayHyperdriveEnv.Config(variable_rate_policy=rate_policy, reward_policy=reward)
+    env_config = RayHyperdriveEnv.Config(
+        variable_rate_policy=rate_policy, variable_rate_policy_config=rate_policy_config, reward_policy=reward
+    )
     policies = [POLICY_PREFIX + str(i) for i in range(env_config.num_agents)]
 
     # TODO: Make all of init() params explicit
