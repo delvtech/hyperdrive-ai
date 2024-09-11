@@ -362,7 +362,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         self.truncateds = set()
 
         # Call reset on variable rate policy
-        self.env_config.variable_rate_policy.reset()
+        self.env_config.variable_rate_policy.reset(self.rng)
 
         # Get first observation and info
         observations = self._get_observations()
@@ -653,8 +653,10 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # Update variable rate with probability Config.rate_change_probability
         # TODO: Parameterize distribution and clip
-        if self.env_config.variable_rate_policy.do_change_rate():
-            new_rate = self.env_config.variable_rate_policy.get_new_rate(self.interactive_hyperdrive.interface)
+        if self.env_config.variable_rate_policy.do_change_rate(self.rng):
+            new_rate = self.env_config.variable_rate_policy.get_new_rate(
+                self.interactive_hyperdrive.interface, self.rng
+            )
             self.interactive_hyperdrive.set_variable_rate(new_rate)
 
         self.interactive_hyperdrive.sync_database()
