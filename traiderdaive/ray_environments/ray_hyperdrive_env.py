@@ -167,7 +167,6 @@ class RayHyperdriveEnv(MultiAgentEnv):
         if self.eval_mode:
             self.chain.run_dashboard()
 
-        # TODO set seed
         # Instantiate the random number generator
         random_seed = np.random.randint(1, 99999) + self.worker_index
         self.rng = np.random.default_rng(random_seed)
