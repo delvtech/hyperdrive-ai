@@ -169,7 +169,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
             self.chain.run_dashboard()
 
         # Instantiate the random number generator
-        random_seed = np.random.normal(0, 1, 10) + self.worker_index
+        random_seed = np.random.randint(1, 99999) + self.worker_index
         self.rng = np.random.default_rng(random_seed)
 
         # Instantiate the variable rate policy
