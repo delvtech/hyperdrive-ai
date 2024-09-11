@@ -352,6 +352,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
         self.terminateds = set()
         self.truncateds = set()
 
+        # Call reset on variable rate policy
+        self.env_config.variable_rate_policy.reset()
+
         # Get first observation and info
         observations = self._get_observations()
         info = self._get_info()

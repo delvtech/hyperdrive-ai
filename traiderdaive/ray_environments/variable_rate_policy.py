@@ -1,6 +1,7 @@
 """Defining policy classes for controlling variable rates."""
 
 from dataclasses import dataclass
+from typing import Sequence, Type
 
 import numpy as np
 from agent0.ethpy.hyperdrive import HyperdriveReadInterface
@@ -56,7 +57,14 @@ class VariableRatePolicy:
         FixedPoint
             The new variable rate to set to.
         """
-        raise NotImplemented
+        raise NotImplementedError
+
+    def reset(self) -> None:
+        """Resets the policy.
+
+        This function gets called whenever the environment's `reset` is called.
+        """
+        # Default behavior is no-op
 
 
 class RandomNormalVariableRate(VariableRatePolicy):
@@ -100,3 +108,68 @@ class Swings(RandomNormalVariableRate):
         rate_change_probability: float = 0.1
         loc: float = 1.0
         scale: float = 0.1
+
+
+class Ramp(VariableRatePolicy):
+    @dataclass(kw_only=True)
+    class Config(VariableRatePolicy.Config):
+        # We always change the rate on every step
+        rate_change_probability = 1
+        rate_change_delta = FixedPoint(0.001)
+
+    def get_new_rate(self, interface: HyperdriveReadInterface) -> FixedPoint:
+        # Type narrow
+        assert isinstance(self.config, Ramp.Config)
+        assert self.config.rng is not None
+        current_rate = interface.get_variable_rate()
+        # narrow type
+        assert current_rate is not None
+        # new rate is random & between 10x and 0.1x the current rate
+        return current_rate + self.config.rate_change_delta
+
+
+class PositiveRamp(Ramp):
+    @dataclass(kw_only=True)
+    class Config(Ramp.Config):
+        rate_change_probability: float = 0.1
+        rate_change_delta = FixedPoint(0.001)
+
+
+class NegativeRamp(Ramp):
+    @dataclass(kw_only=True)
+    class Config(Ramp.Config):
+        rate_change_probability: float = 0.1
+        rate_change_delta = FixedPoint(-0.001)
+
+
+class RandomRatePolicy(VariableRatePolicy):
+    @dataclass(kw_only=True)
+    class Config(VariableRatePolicy.Config):
+        policies: Sequence[Type[VariableRatePolicy]] = (
+            RandomWalk,
+            Transition,
+            Swings,
+            PositiveRamp,
+            NegativeRamp,
+        )
+
+    def __init__(self, config: Config | None = None):
+        super().__init__(config)
+        self.active_policy: VariableRatePolicy | None = None
+
+    def reset(self):
+        # In reset, we select a random policy to use
+        assert self.config.rng is not None
+        assert isinstance(self.config, RandomRatePolicy.Config)
+        # rng.choice has issues mapping list of types to array like
+        active_policy_class: Type[VariableRatePolicy] = self.config.rng.choice(self.config.policies)  # type: ignore
+        self.active_policy = active_policy_class(active_policy_class.Config(rng=self.config.rng))
+        print(f"Using {self.active_policy}")
+
+    def do_change_rate(self) -> bool:
+        assert self.active_policy is not None
+        return self.active_policy.do_change_rate()
+
+    def get_new_rate(self, interface: HyperdriveReadInterface) -> FixedPoint:
+        assert self.active_policy is not None
+        return self.active_policy.get_new_rate(interface)
