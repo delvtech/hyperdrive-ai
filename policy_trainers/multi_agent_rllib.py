@@ -10,7 +10,7 @@ from ray.rllib.algorithms.ppo import PPOConfig
 from ray.tune.logger import pretty_print
 
 from traiderdaive.ray_environments.ray_hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX, RayHyperdriveEnv
-from traiderdaive.ray_environments.variable_rate_policy import RandomWalk, Transition, VariableRatePolicy
+from traiderdaive.ray_environments.variable_rate_policy import RandomRatePolicy
 
 GPU = True
 
@@ -26,10 +26,7 @@ def run_train():
     start_time = datetime.now()
     print(f"Start time: {start_time.strftime('%I:%M:%S %p')}")
 
-    # TODO change variable transition rate policy here
-    rate_policy = Transition()
-    # rate_policy = RandomWalk()
-    # rate_policy = VariableRatePolicy()
+    rate_policy = RandomRatePolicy()
 
     env_config = RayHyperdriveEnv.Config(variable_rate_policy=rate_policy)
     policies = [POLICY_PREFIX + str(i) for i in range(env_config.num_agents)]
