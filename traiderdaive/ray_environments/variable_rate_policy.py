@@ -1,5 +1,6 @@
 """Defining policy classes for controlling variable rates."""
 
+import logging
 from dataclasses import dataclass
 from typing import Sequence, Type
 
@@ -163,7 +164,7 @@ class RandomRatePolicy(VariableRatePolicy):
         # rng.choice has issues mapping list of types to array like
         active_policy_class: Type[VariableRatePolicy] = rng.choice(self.config.policies)  # type: ignore
         self.active_policy = active_policy_class()
-        print(f"Using {self.active_policy}")
+        logging.info(f"Using {self.active_policy}")
 
     def do_change_rate(self, rng: Generator) -> bool:
         assert self.active_policy is not None

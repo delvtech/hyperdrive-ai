@@ -168,7 +168,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
             self.chain.run_dashboard()
 
         # TODO set seed
-        self.rng = np.random.default_rng()
+        # Instantiate the random number generator
+        random_seed = np.random.randint(1, 99999) + self.worker_index
+        self.rng = np.random.default_rng(random_seed)
 
         # Define the rl agents
         self.rl_agents = {
@@ -295,6 +297,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # setup logger
         self.logger = logging.getLogger()
+        self.logger.info("rng seed: " + str(random_seed))
         super().__init__()
 
         # Setup the reward
