@@ -7,7 +7,7 @@ import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any, Iterable, Type
 
 import numpy as np
 from agent0 import LocalChain, LocalHyperdrive, PolicyZoo
@@ -16,7 +16,8 @@ from gymnasium import spaces
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from scipy.special import expit
 
-from .rewards import calculate_total_value
+from .rewards import DeltaPnl
+from .rewards.base_reward import BaseReward
 from .variable_rate_policy import RandomNormalVariableRate, VariableRatePolicy
 
 AGENT_PREFIX = "agent"
@@ -63,6 +64,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # How much to advance time per step
         step_advance_time = 8 * 3600  # 8 hours
 
+        # Reward and variable rate policy
+        reward_policy: Type[BaseReward] = field(default=DeltaPnl)
         variable_rate_policy: VariableRatePolicy = field(default=RandomNormalVariableRate())
 
         # RL Agents Config
@@ -288,6 +291,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
         self._prev_pnls: dict[str, float] = {agent_id: 0.0 for agent_id in self.agents}
         self._step_count = 0
 
+        # instantiate reward class
+        self.reward = self.env_config.reward_policy(self)
+        # setup logger
         self.logger = logging.getLogger()
         super().__init__()
 
@@ -736,7 +742,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         return out_obs
 
     def _calculate_rewards(self, agents: Iterable[str] | None = None) -> dict[str, float]:
-        return calculate_total_value(self, agents)
+        return self.reward.calculate_rewards(agents)
 
     def render(self) -> None:
         """Renders the environment. No rendering available for hyperdrive env."""
