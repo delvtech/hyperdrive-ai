@@ -7,17 +7,20 @@ import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, Type
 
 import numpy as np
 from agent0 import LocalChain, LocalHyperdrive, PolicyZoo
-from agent0.ethpy.base import get_account_balance
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from scipy.special import expit
 
+from .rewards import DeltaPnl
 from .variable_rate_policy import RandomNormalVariableRate, VariableRatePolicy
+
+if TYPE_CHECKING:
+    from .rewards.base_reward import BaseReward
 
 AGENT_PREFIX = "agent"
 POLICY_PREFIX = "policy"
@@ -63,6 +66,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # How much to advance time per step
         step_advance_time = 8 * 3600  # 8 hours
 
+        # Reward and variable rate policy
+        reward_policy: Type[BaseReward] = field(default=DeltaPnl)
         variable_rate_policy: VariableRatePolicy = field(default=RandomNormalVariableRate())
 
         # RL Agents Config
@@ -288,8 +293,12 @@ class RayHyperdriveEnv(MultiAgentEnv):
         self._prev_pnls: dict[str, float] = {agent_id: 0.0 for agent_id in self.agents}
         self._step_count = 0
 
+        # setup logger
         self.logger = logging.getLogger()
         super().__init__()
+
+        # Setup the reward
+        self.reward = self.env_config.reward_policy(env=self)
 
     def __del__(self) -> None:
         self.chain.cleanup()
@@ -735,46 +744,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         return out_obs
 
-    def _calculate_rewards(
-        self, agents: Iterable[str] | None = None, reward_selector: str = "total_value"
-    ) -> dict[str, float]:
-        agents = agents or self.agents
-        # The total delta for this episode
-
-        current_positions = self.interactive_hyperdrive.get_positions(
-            show_closed_positions=True, calc_pnl=True, coerce_float=True
-        )
-        reward = {}
-        for agent_id in agents:
-            # Filter by agent ID
-            agent_positions = current_positions[current_positions["wallet_address"] == self.rl_agents[agent_id].address]
-
-            # Reward is in units of base
-            match reward_selector:
-                case "delta_pnl":
-                    # We use the change in pnl as the reward
-                    # The agent_positions shows the pnl of all positions
-                    # Sum across all positions
-                    # TODO one option here is to only look at base positions instead of sum across all positions.
-                    # TODO handle the case where pnl calculation doesn't return a number
-                    # when you can't close the position
-                    new_pnl = float(agent_positions["pnl"].sum())
-                    reward[agent_id] = new_pnl - self._prev_pnls[agent_id]
-                    self._prev_pnls[agent_id] = new_pnl
-                case "total_pnl":
-                    # We use the absolute pnl as the reward
-                    reward[agent_id] = float(agent_positions["pnl"].sum())
-                case "realized_value":
-                    # We use the absolute realized value as the reward
-                    total_realized_value = float(agent_positions["realized_value"].sum())
-                    reward[agent_id] = total_realized_value
-                case "total_value":
-                    # We use the absolute realized value and the eth balance as the reward
-                    total_realized_value = float(agent_positions["realized_value"].sum())
-                    agent_eth_balance = get_account_balance(self.chain._web3, self.rl_agents[agent_id].address)
-                    assert agent_eth_balance is not None  # type narrowing
-                    reward[agent_id] = total_realized_value + agent_eth_balance
-        return reward
+    def _calculate_rewards(self, agents: Iterable[str] | None = None) -> dict[str, float]:
+        return self.reward.calculate_rewards(agents)
 
     def render(self) -> None:
         """Renders the environment. No rendering available for hyperdrive env."""
