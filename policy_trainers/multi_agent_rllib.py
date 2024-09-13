@@ -1,7 +1,6 @@
 """Multi agent rllib policy trainer"""
 
 import os
-import pathlib
 from datetime import datetime
 
 import ray
@@ -117,10 +116,8 @@ def run_train():
         checkpoint_dir = f"{project_dir}/checkpoints/{run_timestamp}/{i:06d}"
         save_result = algo.save(checkpoint_dir=checkpoint_dir)
         print(f"Saved checkpoint to: {save_result.checkpoint.path}")
-        # Remove any tmp files created by anvil
-        # TODO : Fix this; it's not working
-        anvil_tmp = pathlib.Path("~/.foundry/tmp")
-        anvil_tmp.unlink(missing_ok=True)
+        # Remove tmp files created by anvil
+        shutil.rmtree(os.path.expanduser("~/.foundry/anvil/tmp"))
     end_time = datetime.now()
     print(f"\nFinished: {end_time.strftime('%I:%M:%S %p')}")
     print(f"({(end_time - start_time).total_seconds() / 60} minutes.)")
