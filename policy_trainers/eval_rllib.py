@@ -9,7 +9,8 @@ from traiderdaive.ray_environments.ray_hyperdrive_env import AGENT_PREFIX, POLIC
 GPU = False
 
 env_config = RayHyperdriveEnv.Config(eval_mode=True)
-policies = [POLICY_PREFIX + str(i) for i in range(env_config.num_agents)]
+policy_ids = [POLICY_PREFIX + str(i) for i in range(env_config.num_agents)]
+agent_ids = [AGENT_PREFIX + str(i) for i in range(env_config.num_agents)]
 
 ray.init(local_mode=True)  # Use local_mode=True for debugging
 config: AlgorithmConfig = (
@@ -17,10 +18,10 @@ config: AlgorithmConfig = (
     .environment(env=RayHyperdriveEnv, env_config={"env_config": env_config})
     .api_stack(enable_rl_module_and_learner=True, enable_env_runner_and_connector_v2=True)
     .multi_agent(
-        policies=set(policies),
+        policies=set(policy_ids),
         # Mapping agent0 to policy0, etc.
         policy_mapping_fn=(lambda agent_id, episode, **kwargs: f"{POLICY_PREFIX}{agent_id.lstrip(AGENT_PREFIX)}"),
-        policies_to_train=policies,
+        policies_to_train=policy_ids,
     )
     .evaluation(evaluation_duration=1, evaluation_duration_unit="episodes")
 )
