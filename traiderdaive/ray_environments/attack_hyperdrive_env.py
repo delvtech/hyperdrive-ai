@@ -2,21 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 import warnings
-from dataclasses import dataclass, field
-from datetime import datetime
-from enum import Enum
-from typing import Any, Iterable
 
 import numpy as np
-from agent0 import LocalChain, LocalHyperdrive, PolicyZoo
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
-from ray.rllib.env.multi_agent_env import MultiAgentEnv
-from scipy.special import expit
 
-from .ray_hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX, RayHyperdriveEnv, TradeTypes
+from .ray_hyperdrive_env import RayHyperdriveEnv, TradeTypes
 
 # Global suppression of warnings, TODO fix
 warnings.filterwarnings("ignore")
