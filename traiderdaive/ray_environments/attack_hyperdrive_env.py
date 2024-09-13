@@ -70,12 +70,12 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
                     low=-1e2,
                     high=1e2,
                     dtype=np.float64,
-                    shape=(3 * len(TradeTypes) * (self.env_config.max_positions_per_type + 2),),
+                    shape=(3 * (len(TradeTypes) * (self.env_config.max_positions_per_type + 2)),),
                 )
                 for agent_id in self.agents
             }
         )
-        
+
     def _apply_action(self, agent_id: str, action: np.ndarray) -> list[bool]:
         """Execute the bot action on-chain.
 
@@ -96,39 +96,53 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
         # pylint: disable=too-many-branches
         # pylint: disable=too-many-nested-blocks
         # pylint: disable=too-many-statements
+
+        # The agent can now specify 3 trade sets.
+        # For each set they can execute 3 trades, but we expect them to learn
+        # to pick one tarde per set.
+        num_trades = 3
+        action_length_per_trade = len(TradeTypes) * (self.env_config.max_positions_per_type + 2)
+
         trade_success = [
             True,
-        ] * (len(TradeTypes))
+        ] * (num_trades * len(TradeTypes))
 
+        agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=False)
         # The actual min txn amount is a function of pool state. Without helper functions, we simply add a safe amount.
         min_tx_amount = self.interactive_hyperdrive.config.minimum_transaction_amount * FixedPoint("2")
 
-        long_short_actions = action[:-4]
-        long_short_actions = long_short_actions.reshape((len(TradeTypes), self.env_config.max_positions_per_type + 2))
-        close_long_short_actions = long_short_actions[:, :-2]
-        open_long_short_actions = long_short_actions[:, -2:]
+        for trade_idx in range(num_trades):
+            sub_trade_success = [
+                True,
+            ] * len(TradeTypes)
+            start_idx = trade_idx * action_length_per_trade
+            end_idx = start_idx + action_length_per_trade
+            if end_idx > len(action):
+                end_idx = len(action)
+            trade_action = action[start_idx:end_idx]
 
-        # Then we can sort by those and the agent can specify the order of trades.
-        # The RL bot handles trades in this order:
-        # (1) Close long tokens
-        # (2) Close short tokens
-        # (2) Open long tokens
-        # (4) Open short tokens
+            long_short_actions = trade_action[:-4]
+            long_short_actions = long_short_actions.reshape(
+                (len(TradeTypes), self.env_config.max_positions_per_type + 2)
+            )
+            close_long_short_actions = long_short_actions[:, :-2]
+            open_long_short_actions = long_short_actions[:, -2:]
+            lp_actions = trade_action[-4:]
 
-<<<<<<<<<<<<<<  ✨ Codeium Command 🌟  >>>>>>>>>>>>>>>>
-        # Get agent positions once so we don't hit the database too many times.
-        # The downside of this is we could undershoot the max_positions_per_type
-        # since any close actions this round will not be accounted for. This
-        # is a fine tradeoff, though, since it's an undershoot and the next time
-        # apply_action is called the previous closes will be accounted for.
-        agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=False)
+            # Closing trades
+            close_trade_success = self._apply_close_trades(agent_id, close_long_short_actions, agent_positions)
+            sub_trade_success[: len(close_trade_success)] = close_trade_success
 
-        # Closing trades
-        close_trade_success = self._apply_close_trades(agent_id, close_long_short_actions, agent_positions)
-        trade_success[: len(close_trade_success)] = close_trade_success
-        # Open trades
-        open_trade_success = self._apply_open_trades(agent_id, min_tx_amount, open_long_short_actions, agent_positions)
-        trade_success[len(close_trade_success) : len(open_trade_success)] = open_trade_success
+            # Open trades
+            open_trade_success = self._apply_open_trades(
+                agent_id, min_tx_amount, open_long_short_actions, agent_positions
+            )
+            sub_trade_success[len(close_trade_success) : len(open_trade_success)] = open_trade_success
+
+            # LP trade
+            sub_trade_success[-1] = self._apply_lp_trades(agent_id, min_tx_amount, lp_actions)
+
+            # Record success list
+            trade_success.extend(sub_trade_success)
 
         return trade_success
-<<<<<<<  c40afb40-be44-41b7-ba88-be13d033a012  >>>>>>>
