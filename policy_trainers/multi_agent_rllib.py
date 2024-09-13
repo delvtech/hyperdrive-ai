@@ -118,7 +118,9 @@ def run_train():
         save_result = algo.save(checkpoint_dir=checkpoint_dir)
         print(f"Saved checkpoint to: {save_result.checkpoint.path}")
         # Remove tmp files created by anvil
-        shutil.rmtree(os.path.expanduser("~/.foundry/anvil/tmp"))
+        tmp_dir = os.path.expanduser("~/.foundry/anvil/tmp")
+        if os.path.isdir(tmp_dir):
+            shutil.rmtree(tmp_dir)
     end_time = datetime.now()
     print(f"\nFinished: {end_time.strftime('%I:%M:%S %p')}")
     print(f"({(end_time - start_time).total_seconds() / 60} minutes.)")
