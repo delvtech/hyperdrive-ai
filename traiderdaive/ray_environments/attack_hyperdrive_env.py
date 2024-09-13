@@ -121,8 +121,8 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
             ] * len(TradeTypes)
             start_idx = trade_idx * action_length_per_trade
             end_idx = start_idx + action_length_per_trade
-            if end_idx > len(action):
-                end_idx = len(action)
+            assert end_idx <= len(action), "Indexing out of bounds."
+
             trade_action = action[start_idx:end_idx]
 
             long_short_actions = trade_action[:-4]
