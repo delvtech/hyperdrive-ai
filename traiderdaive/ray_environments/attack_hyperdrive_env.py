@@ -70,10 +70,7 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
                     low=-1e2,
                     high=1e2,
                     dtype=np.float64,
-                    shape=(
-                        self.env_config.num_trade_sets_per_step
-                        * (len(TradeTypes) * (self.env_config.max_positions_per_type + 2)),
-                    ),
+                    shape=(self.env_config.num_trade_sets_per_step * self.action_length_per_trade_set,),
                 )
                 for agent_id in self.agents
             }
@@ -105,7 +102,6 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
         # The agent can now specify 3 trade sets.
         # For each set they can execute 3 trades, but we expect them to learn
         # to pick one tarde per set.
-        action_length_per_trade = len(TradeTypes) * (self.env_config.max_positions_per_type + 2)
 
         trade_success = [
             True,
@@ -119,8 +115,8 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
             sub_trade_success = [
                 True,
             ] * len(TradeTypes)
-            start_idx = trade_idx * action_length_per_trade
-            end_idx = start_idx + action_length_per_trade
+            start_idx = trade_idx * self.action_length_per_trade_set
+            end_idx = start_idx + self.action_length_per_trade_set
             assert end_idx <= len(action), "Indexing out of bounds."
 
             trade_action = action[start_idx:end_idx]

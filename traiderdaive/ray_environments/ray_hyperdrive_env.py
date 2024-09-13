@@ -302,6 +302,12 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Setup the reward
         self.reward = self.env_config.reward_policy(env=self)
 
+        # Tracker for action lengths
+        # first TradeTypes * `max_positions_per_type` is for closing existing positions
+        # the +2 is for opening a new trade
+        # the +4 is for LP
+        self.action_length_per_trade_set = len(TradeTypes) * (self.env_config.max_positions_per_type + 2) + 4
+
     def __del__(self) -> None:
         self.chain.cleanup()
 
@@ -316,7 +322,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
                     low=-1e2,
                     high=1e2,
                     dtype=np.float64,
-                    shape=(len(TradeTypes) * (self.env_config.max_positions_per_type + 2) + 4,),
+                    shape=(self.action_length_per_trade_set,),
                 )
                 for agent_id in self.agents
             }
