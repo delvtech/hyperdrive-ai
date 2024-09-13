@@ -1,4 +1,4 @@
-"""A hyperdrive rl gym environment."""
+"""A hyperdrive rl gym environment that encourages "burrito" attacks."""
 
 from __future__ import annotations
 
