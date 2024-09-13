@@ -71,6 +71,15 @@ class VariableRatePolicy:
         # Default behavior is no-op
 
 
+class ConstantVariableRate(VariableRatePolicy):
+    def do_change_rate(self, rng: Generator) -> bool:
+        # Never change rate
+        return False
+
+    def get_new_rate(self, interface: HyperdriveReadInterface, rng: Generator) -> FixedPoint:
+        raise ValueError("Constant rate should never change")
+
+
 class RandomNormalVariableRate(VariableRatePolicy):
     @dataclass(kw_only=True)
     class Config(VariableRatePolicy.Config):
@@ -148,6 +157,7 @@ class RandomRatePolicy(VariableRatePolicy):
     class Config(VariableRatePolicy.Config):
         policies: Sequence[Type[VariableRatePolicy]] = (
             RandomWalk,
+            ConstantVariableRate,
             Transition,
             Swings,
             PositiveRamp,
