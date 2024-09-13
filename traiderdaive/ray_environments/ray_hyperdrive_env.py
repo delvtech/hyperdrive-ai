@@ -254,6 +254,12 @@ class RayHyperdriveEnv(MultiAgentEnv):
         #    add liquidity volume,
         # ]
 
+        # Tracker for action lengths
+        # first TradeTypes * `max_positions_per_type` is for closing existing positions
+        # the + TradeTypes * 2 is for opening a new trade (2 indicates probability & volume)
+        # the +4 is for LP
+        self.action_length_per_trade_set = len(TradeTypes) * (self.env_config.max_positions_per_type + 2) + 4
+
         self.create_action_space()
 
         # Observation space is
@@ -301,12 +307,6 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # Setup the reward
         self.reward = self.env_config.reward_policy(env=self)
-
-        # Tracker for action lengths
-        # first TradeTypes * `max_positions_per_type` is for closing existing positions
-        # the + TradeTypes * 2 is for opening a new trade (2 indicates probability & volume)
-        # the +4 is for LP
-        self.action_length_per_trade_set = len(TradeTypes) * (self.env_config.max_positions_per_type + 2) + 4
 
     def __del__(self) -> None:
         self.chain.cleanup()
