@@ -120,7 +120,7 @@ def run_train():
         # Remove tmp files created by anvil
         tmp_dir = os.path.expanduser("~/.foundry/anvil/tmp")
         if os.path.isdir(tmp_dir):
-            shutil.rmtree(tmp_dir)
+            shutil.rmtree(tmp_dir, ignore_errors=True)
     end_time = datetime.now()
     print(f"\nFinished: {end_time.strftime('%I:%M:%S %p')}")
     print(f"({(end_time - start_time).total_seconds() / 60} minutes.)")
