@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import warnings
+from dataclasses import dataclass
 
 import numpy as np
 from fixedpointmath import FixedPoint
@@ -42,7 +43,14 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
       3. Manual agent closes all positions (potentially receiving nothing)
     """
 
+    @dataclass(kw_only=True)
+    class Config(RayHyperdriveEnv.Config):
+        """The configuration for AttackHyperdriveEnv."""
+
+        num_trade_sets_per_step: int = 3
+
     def __init__(self, env_config) -> None:
+        super().__init__(env_config)
         # For this attack we only want one agent and zero random bots
         assert self.env_config.num_random_bots == 0
         assert self.env_config.num_random_hold_bots == 0
@@ -50,11 +58,11 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
         # The attack assumes they only hold 1 trade of each type
         # Note that the bot _could_ learn this; we are enforcing it to help out
         assert self.env_config.max_positions_per_type == 1
-        super().__init__(env_config)
 
     def create_action_space(self) -> None:
         """Returns the action space object."""
         # Allowing the agent to propose 3 actions per step instead of 1
+        assert isinstance(self.env_config, self.Config)  # narrow type
         self._action_space_in_preferred_format = True
         self.action_space = spaces.Dict(
             {
@@ -62,7 +70,10 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
                     low=-1e2,
                     high=1e2,
                     dtype=np.float64,
-                    shape=(3 * (len(TradeTypes) * (self.env_config.max_positions_per_type + 2)),),
+                    shape=(
+                        self.env_config.num_trade_sets_per_step
+                        * (len(TradeTypes) * (self.env_config.max_positions_per_type + 2)),
+                    ),
                 )
                 for agent_id in self.agents
             }
@@ -89,21 +100,22 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
         # pylint: disable=too-many-nested-blocks
         # pylint: disable=too-many-statements
 
+        assert isinstance(self.env_config, self.Config)  # narrow type
+
         # The agent can now specify 3 trade sets.
         # For each set they can execute 3 trades, but we expect them to learn
         # to pick one tarde per set.
-        num_trades = 3
         action_length_per_trade = len(TradeTypes) * (self.env_config.max_positions_per_type + 2)
 
         trade_success = [
             True,
-        ] * (num_trades * len(TradeTypes))
+        ] * (self.env_config.num_trade_sets_per_step * len(TradeTypes))
 
         agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=False)
         # The actual min txn amount is a function of pool state. Without helper functions, we simply add a safe amount.
         min_tx_amount = self.interactive_hyperdrive.config.minimum_transaction_amount * FixedPoint("2")
 
-        for trade_idx in range(num_trades):
+        for trade_idx in range(self.env_config.num_trade_sets_per_step):
             sub_trade_success = [
                 True,
             ] * len(TradeTypes)
