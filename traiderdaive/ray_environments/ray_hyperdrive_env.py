@@ -306,7 +306,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         self.chain.cleanup()
 
     def create_action_space(self) -> None:
-        """Create the action space object & assign it to self."""
+        """Returns the action space object."""
         # (longs, shorts) -> close_order_i(logit), new_order(logit), volume)
         # (lp) -> add_lp_order(logit), volume_add_lp, remove_lp_order(logit), volume_remove_lp)
         self._action_space_in_preferred_format = True
