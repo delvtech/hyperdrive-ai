@@ -6,3 +6,4 @@
 gymnasium
 scipy
 ray[rllib]
+torch
