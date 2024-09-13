@@ -64,7 +64,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # Hyperdrive Config
         # How much to advance time per step
-        step_advance_time = 8 * 3600  # 8 hours
+        step_advance_time: int = 8 * 3600  # 8 hours
 
         # Reward and variable rate policy
         reward_policy: Type[BaseReward] = field(default=DeltaPnl)
