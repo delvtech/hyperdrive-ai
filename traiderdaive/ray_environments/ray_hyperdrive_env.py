@@ -304,7 +304,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
 
         # Tracker for action lengths
         # first TradeTypes * `max_positions_per_type` is for closing existing positions
-        # the +2 is for opening a new trade
+        # the + TradeTypes * 2 is for opening a new trade (2 indicates probability & volume)
         # the +4 is for LP
         self.action_length_per_trade_set = len(TradeTypes) * (self.env_config.max_positions_per_type + 2) + 4
 
