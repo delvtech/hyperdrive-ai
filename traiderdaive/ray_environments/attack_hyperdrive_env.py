@@ -6,6 +6,7 @@ import warnings
 from dataclasses import dataclass
 
 import numpy as np
+from agent0 import LocalHyperdrive
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
 
@@ -74,6 +75,22 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
                 )
                 for agent_id in self.agents
             }
+        )
+
+    def _get_hyperdrive_pool_config(self) -> LocalHyperdrive.Config:
+        """Get the Hyperdrive pool config."""
+        fixed_apr = FixedPoint(0.5)
+        return LocalHyperdrive.Config(
+            factory_max_circuit_breaker_delta=FixedPoint(2e3),
+            factory_max_fixed_apr=FixedPoint(10),
+            circuit_breaker_delta=FixedPoint(1e3),
+            initial_fixed_apr=fixed_apr,
+            initial_time_stretch_apr=fixed_apr,
+            initial_variable_rate=fixed_apr,
+            curve_fee=FixedPoint(0.01),
+            flat_fee=FixedPoint(0.0005),
+            position_duration=4 * 7 * 24 * 60 * 60,  # 4 weeks
+            initial_liquidity=FixedPoint(100_000),
         )
 
     def _apply_action(self, agent_id: str, action: np.ndarray) -> list[bool]:

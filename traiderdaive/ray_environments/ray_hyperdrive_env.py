@@ -160,7 +160,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
             backfill_pool_info=False,
         )
 
-        initial_pool_config = LocalHyperdrive.Config()
+        initial_pool_config = self._get_hyperdrive_pool_config()
         self.chain = LocalChain(local_chain_config)
         self.interactive_hyperdrive = LocalHyperdrive(self.chain, initial_pool_config)
 
@@ -377,6 +377,10 @@ class RayHyperdriveEnv(MultiAgentEnv):
         info = self._get_info()
 
         return observations, info
+
+    def _get_hyperdrive_pool_config(self) -> LocalHyperdrive.Config:
+        """Get the Hyperdrive pool config."""
+        return LocalHyperdrive.Config()
 
     def _apply_action(self, agent_id: str, action: np.ndarray) -> list[bool]:
         """Execute the bot action on-chain.
