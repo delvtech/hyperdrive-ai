@@ -124,11 +124,14 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
             True,
         ] * (self.env_config.num_trade_sets_per_step * len(TradeTypes))
 
-        agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=False)
         # The actual min txn amount is a function of pool state. Without helper functions, we simply add a safe amount.
         min_tx_amount = self.interactive_hyperdrive.config.minimum_transaction_amount * FixedPoint("2")
 
         for trade_idx in range(self.env_config.num_trade_sets_per_step):
+            # Need to sync the database to account for the trades happening in this loop
+            self.interactive_hyperdrive.sync_database()
+            agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=False)
+
             sub_trade_success = [
                 True,
             ] * len(TradeTypes)
