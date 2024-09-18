@@ -7,10 +7,14 @@ from ray.rllib.algorithms import AlgorithmConfig
 from ray.rllib.algorithms.ppo import PPOConfig
 
 from traiderdaive.ray_environments.ray_hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX, RayHyperdriveEnv
+from traiderdaive.ray_environments.variable_rate_policy import RandomRatePolicy
 
 GPU = False
 
-env_config = RayHyperdriveEnv.Config(eval_mode=True)
+# Rate policy
+rate_policy = RandomRatePolicy()
+
+env_config = RayHyperdriveEnv.Config(eval_mode=True, variable_rate_policy=rate_policy)
 policy_ids = [POLICY_PREFIX + str(i) for i in range(env_config.num_agents)]
 agent_ids = [AGENT_PREFIX + str(i) for i in range(env_config.num_agents)]
 
@@ -28,17 +32,17 @@ config: AlgorithmConfig = (
     .evaluation(evaluation_duration=1, evaluation_duration_unit="episodes")
 )
 algo = config.build()
-run_timestamp = "2024_09_09_00_00_00"
-idx = "000001"
+run_timestamp = "GCP_Variable_Rate_Eth_Base_Reward_2024_09_13_23_47_19"
+idx = "001989"
 checkpoint_dir = f"{os.path.dirname(os.path.dirname(os.path.realpath(__file__)))}/checkpoints/{run_timestamp}/{idx}"
 algo.restore(checkpoint_dir)
 
-# Run custom number of steps:
-for step in range(env_config.episode_length):
-    sample = run_one_step(algo.env_runner)
+# # Run custom number of steps:
+# for step in range(env_config.episode_length):
+#     sample = run_one_step(algo.env_runner)
 
 # Run full eval:
-# algo.evaluate() # Run full eval
+algo.evaluate()  # Run full eval
 print("Finished evaluation")
 
 # TODO: Expand on this to make manual action -> step() -> observation possible
