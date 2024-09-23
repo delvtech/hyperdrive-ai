@@ -46,10 +46,10 @@ class ValueAboveInitialLp(BaseReward):
         # Get total value of initial LP address
         initial_lp_address = self.env.chain.get_deployer_address()
         lp_positions = current_positions[current_positions["wallet_address"] == initial_lp_address]
-        lp_realized_value = float(lp_positions["realized_value"].sum())
+        lp_pnl = float(lp_positions["pnl"].sum())  # use PnL since this LP might not close positions
         lp_eth_balance = get_account_balance(self.env.chain._web3, initial_lp_address)
         assert lp_eth_balance is not None  # type narrowing
-        lp_total_value = lp_realized_value + lp_eth_balance
+        lp_total_value = lp_pnl + lp_eth_balance
         # Get total value of agent address
         agent_positions = current_positions[current_positions["wallet_address"] == self.env.rl_agents[agent_id].address]
         total_realized_value = float(agent_positions["realized_value"].sum())
