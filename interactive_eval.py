@@ -175,6 +175,33 @@ def main():
         )
         return agent_positions.iloc[:10]
 
+    def help():
+        line = "\n" + "-" * 20 + "\n"
+        nl = "\n"
+        tab = " " * 4
+        help = (
+            f"{line}Agent0 Objects:{line}"
+            f"chain: LocalChain{nl}"
+            f"pool: LocalHyperdrive{nl}"
+            f"agent: LocalHyperdriveAgent{nl}"
+            f"{line}Eval Functions:{line}"
+            f"step(num_steps=1):{nl}{tab}Take N steps in the environment{nl}"
+            f"get_pool_info():{nl}{tab}Returns DataFrame with pool info.{nl}"
+            f"get_trade_events():{nl}{tab}Returns DataFrame with all trade events.{nl}"
+            f"get_positions():{nl}{tab}Returns DataFrame with all positions.{nl}"
+            f"get_pnl():{nl}{tab}Returns agent's pnl.{nl}"
+            f"get_agent_positions():{nl}{tab}Returns agent positions (for plotting).{nl}"
+            f"help():{nl}{tab}Print this help block.{nl}"
+            f"{line}Usage:{line}"
+            f"Run one step:{nl}{tab}In [1]: step(){nl}"
+            f"Run 50 steps:{nl}{tab}In [1]: step(50){nl}"
+            f"View pool info:{nl}{tab}In [1]: get_pool_info(){nl}"
+            f"View trade events:{nl}{tab}In [1]: get_trade_events(){nl}"
+            f"Save trade events as csv:{nl}{tab}In [1]: get_trade_events().to_csv('<path>/<to>/trade_events.csv'){nl}"
+        )
+        print(help)
+    help()
+
     embed(using=False)
     raise SystemExit
 
