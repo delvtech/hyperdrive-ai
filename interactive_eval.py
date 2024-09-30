@@ -200,6 +200,10 @@ def main():
             f"Save trade events as csv:{nl}{tab}In [1]: get_trade_events().to_csv('<path>/<to>/trade_events.csv'){nl}"
         )
         print(help)
+
+    get_pnl().to_csv('pnl.csv')
+    get_pool_info().to_csv('pool_info.csv')
+    get_positions().to_csv('positions.csv')
     help()
 
     embed(using=False)
