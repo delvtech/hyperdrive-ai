@@ -222,7 +222,7 @@ def parse_arguments(argv: Sequence[str] | None = None):
     )
     parser.add_argument(
         "--breakpoint-step",
-        "-b",
+        "-s",
         type=int,
         default=None,
         help="Episode steps to run before halting.",
