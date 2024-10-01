@@ -164,7 +164,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         self.chain = LocalChain(local_chain_config)
         self.interactive_hyperdrive = LocalHyperdrive(self.chain, initial_pool_config)
 
-        if self.eval_mode:
+        if self.eval_mode and self.worker_index == 0:
             self.chain.run_dashboard()
 
         # Instantiate the random number generator
