@@ -175,6 +175,11 @@ def main():
         )
         return agent_positions.iloc[:10]
 
+    def save():
+        get_pnl().to_csv('pnl.csv')
+        get_pool_info().to_csv('pool_info.csv')
+        get_positions().to_csv('positions.csv')
+
     def help():
         line = "\n" + "-" * 20 + "\n"
         nl = "\n"
@@ -191,6 +196,7 @@ def main():
             f"get_positions():{nl}{tab}Returns DataFrame with all positions.{nl}"
             f"get_pnl():{nl}{tab}Returns agent's pnl.{nl}"
             f"get_agent_positions():{nl}{tab}Returns agent positions (for plotting).{nl}"
+            f"save():{nl}{tab}Save pnl, pool info, and historical positions to csv (for plotting).{nl}"
             f"help():{nl}{tab}Print this help block.{nl}"
             f"{line}Usage:{line}"
             f"Run one step:{nl}{tab}In [1]: step(){nl}"
@@ -201,9 +207,7 @@ def main():
         )
         print(help)
 
-    get_pnl().to_csv('pnl.csv')
-    get_pool_info().to_csv('pool_info.csv')
-    get_positions().to_csv('positions.csv')
+    save()
     help()
 
     embed(using=False)
