@@ -1,12 +1,12 @@
-import logging
-
 import argparse
+import logging
 import sys
 from functools import partial
 from IPython import embed
 from typing import Sequence
 
 import numpy as np
+import pandas as pd
 import ray
 from ray.rllib.algorithms import AlgorithmConfig
 from ray.rllib.algorithms.ppo import PPOConfig
@@ -18,11 +18,13 @@ from traiderdaive.ray_environments.attack_hyperdrive_env import AttackHyperdrive
 from traiderdaive.ray_environments.ray_hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX
 from traiderdaive.ray_environments.rewards import TotalRealizedValue
 from traiderdaive.ray_environments.variable_rate_policy import ConstantVariableRate
+from traiderdaive.utils.set_seeds import set_seeds
 
 
 def main():
     """Burrito evaluation main entry point."""
     parsed_args = parse_arguments(sys.argv)
+    set_seeds(seed=parsed_args.seed)
 
     reward = TotalRealizedValue
     rate_policy = ConstantVariableRate()
@@ -62,17 +64,15 @@ def main():
     algo.restore(parsed_args.checkpoint_dir)
     # TODO: sanitize checkpoint path
 
-    def step(num_steps=1, explore=False, return_samples=False):
-        """Runs a single step in the environment."""
-        samples = algo.env_runner.sample(num_timesteps=num_steps, explore=explore)
-        if return_samples:
-            return samples
+    def step(num_steps: int = 1, explore: bool = False) -> list:
+        """Runs `num_steps` steps in the environment."""
+        return algo.env_runner.sample(num_timesteps=num_steps, explore=explore)
 
     num_steps = (
         parsed_args.breakpoint_step if parsed_args.breakpoint_step is not None else env_config.episode_length - 1
     )
     # Run custom number of steps:
-    step(num_steps=num_steps, explore=False)
+    samples = step(num_steps=num_steps, explore=False)
 
     # Get underlying agent0 objects
     chain: LocalChain = algo.env_runner.env.env.chain
@@ -81,7 +81,7 @@ def main():
 
     get_pool_info = partial(pool.get_pool_info, coerce_float=True)  # lol
 
-    def _get_timestamp_lookup():
+    def _get_timestamp_lookup() -> pd.DataFrame:
         pool_info = get_pool_info()
         # Get mapping from block to timestamp
         timestamp_lookup = pool_info[
@@ -93,7 +93,7 @@ def main():
         ]
         return timestamp_lookup
 
-    def get_trade_events():
+    def get_trade_events() -> pd.DataFrame:
         # Modify and get relevant columns of dataframes
         trade_events = pool.get_trade_events(coerce_float=True).merge(right=_get_timestamp_lookup(), on="block_number")[
             [
@@ -110,7 +110,7 @@ def main():
         ]
         return trade_events
 
-    def get_positions():
+    def get_positions() -> pd.DataFrame:
         positions = pool.get_historical_positions(coerce_float=True).merge(
             right=_get_timestamp_lookup(), on="block_number"
         )[
@@ -129,7 +129,7 @@ def main():
         ]
         return positions
 
-    def get_pnl():
+    def get_pnl() -> pd.DataFrame:
         pnl = pool.get_historical_pnl(coerce_float=True).merge(right=_get_timestamp_lookup(), on="block_number")[
             ["block_number", "timestamp", "username", "pnl", "epoch_timestamp"]
         ]
@@ -142,7 +142,7 @@ def main():
 
         return pnl
 
-    def get_agent_positions():
+    def get_agent_positions() -> pd.DataFrame:
         ###### Get and prepare final positions of bad agent ######
         agent_positions = agent.get_positions(show_closed_positions=True, coerce_float=True)
         agent_positions = agent_positions[
@@ -176,9 +176,9 @@ def main():
         return agent_positions.iloc[:10]
 
     def save():
-        get_pnl().to_csv('pnl.csv')
-        get_pool_info().to_csv('pool_info.csv')
-        get_positions().to_csv('positions.csv')
+        get_pnl().to_csv("pnl.csv")
+        get_pool_info().to_csv("pool_info.csv")
+        get_positions().to_csv("positions.csv")
 
     def help():
         line = "\n" + "-" * 20 + "\n"
@@ -211,6 +211,8 @@ def main():
     help()
 
     embed(using=False)
+    ray.shutdown()
+    chain.cleanup()
     raise SystemExit
 
 
@@ -231,6 +233,7 @@ def parse_arguments(argv: Sequence[str] | None = None):
         default=None,
         help="Episode steps to run before halting.",
     )
+    parser.add_argument("--seed", type=int, default=None, help="Set global seed.")
     # Use system arguments if none were passed
     if argv is None:
         argv = sys.argv
