@@ -13,6 +13,7 @@ from traiderdaive.ray_environments.ray_hyperdrive_env import AGENT_PREFIX, POLIC
 from traiderdaive.ray_environments.attack_hyperdrive_env import AttackHyperdriveEnv
 from traiderdaive.ray_environments.rewards import TotalRealizedValue
 from traiderdaive.ray_environments.variable_rate_policy import ConstantVariableRate
+from traiderdaive.utils.logging import create_log_dir, get_logger_creator
 
 GPU = True
 
@@ -20,9 +21,6 @@ GPU = True
 def run_train():
     """Runs training to generate a RL model."""
     # TODO parameterize these variables
-    # TODO Does the env need to be registered with ray?
-    # TODO Why does Ray add an env runner to num_env_runners? How is this used?
-    # TODO Setup monitoring and saving checkpoints
     # TODO Use ray train/tune?
     # TODO Make sure env config and algo config are saved somehow for reproducibility
     start_time = datetime.now()
@@ -116,16 +114,16 @@ def run_train():
             model={"uses_new_env_runners": True, "vf_share_layers": False},
         )
     )
-    algo = config.build()
-    run_timestamp = datetime.now().strftime("BurritoAttack_%Y_%m_%d_%H_%M_%S")
+
+    checkpoint_dir = create_log_dir(prefix=config.env.__name__)
+    algo = config.build(logger_creator=get_logger_creator(checkpoint_dir))
+
     for i in range(env_config.num_training_loops):
         timestamp = datetime.now().strftime("%m/%d/%Y, %I:%M:%S %p")
-        print(f"\n-----------------\nTraining Iteration {i}\nTime: {timestamp}")
+        print(f"\n{'-' * 30}\nTraining Iteration {i}\nTime: {timestamp}")
         result = algo.train()
         print(pretty_print(result))
-        project_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-        checkpoint_dir = f"{project_dir}/checkpoints/{run_timestamp}/{i:06d}"
-        save_result = algo.save(checkpoint_dir=checkpoint_dir)
+        save_result = algo.save(checkpoint_dir=f"{checkpoint_dir}/{i:06d}")
         print(f"Saved checkpoint to: {save_result.checkpoint.path}")
         # Remove tmp files created by anvil
         tmp_dir = os.path.expanduser("~/.foundry/anvil/tmp")
