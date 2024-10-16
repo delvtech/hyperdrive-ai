@@ -6,7 +6,7 @@ import warnings
 from dataclasses import dataclass
 
 import numpy as np
-from agent0 import LocalHyperdrive
+from agent0 import LocalHyperdrive, PolicyZoo
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
 
@@ -49,6 +49,7 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
         """The configuration for AttackHyperdriveEnv."""
 
         num_trade_sets_per_step: int = 3
+        num_arb_bots: int = 1
 
     def __init__(self, env_config) -> None:
         super().__init__(env_config)
@@ -59,6 +60,35 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
         # The attack assumes they only hold 1 trade of each type
         # Note that the bot _could_ learn this; we are enforcing it to help out
         assert self.env_config.max_positions_per_type == 1
+        self.random_bots.extend(
+            [
+                self.chain.init_agent(
+                    base=self.env_config.random_bot_budget,
+                    eth=FixedPoint(100),
+                    pool=self.interactive_hyperdrive,
+                    policy=PolicyZoo.lp_and_arb,
+                    # TODO set the seed per random bot here for reproducibility
+                    policy_config=PolicyZoo.lp_and_arb.Config(
+                        lp_portion=FixedPoint("0.0"),
+                        high_fixed_rate_thresh=FixedPoint("0.01"),
+                        low_fixed_rate_thresh=FixedPoint("0.01"),
+                        done_on_empty=False,
+                        # TODO omitting rng_seed results in the same random generators
+                        # for all bots, fix
+                        rng_seed=self.env_config.num_arb_bots + i,
+                    ),
+                    name="lp_and_arb_bot_" + str(i),
+                )
+                for i in range(self.env_config.num_arb_bots)
+            ]
+        )
+        self.interactive_hyperdrive.sync_database()
+
+        # Save a snapshot of initial conditions for resets
+        self.chain.save_snapshot()
+
+        # if self.worker_index == 0:
+        #     self.chain.run_dashboard()
 
     def create_action_space(self) -> None:
         """Returns the action space object."""
