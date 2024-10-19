@@ -90,6 +90,24 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Sets alternate ports for eval to avoid connecting to a training chain
         eval_mode: bool = False
 
+        # Defines which columns from pool config to include in the observation space
+        pool_config_columns: list[str] = field(
+            default_factory=lambda: [
+                "initial_vault_share_price",
+                "minimum_share_reserves",
+                "minimum_transaction_amount",
+                "circuit_breaker_delta",
+                "position_duration",
+                "checkpoint_duration",
+                "time_stretch",
+                "curve_fee",
+                "flat_fee",
+                "governance_lp_fee",
+                "governance_zombie_fee",
+                "inv_time_stretch",
+            ]
+        )
+
         # Defines which columns from pool info to include in the observation space
         pool_info_columns: list[str] = field(
             default_factory=lambda: [
@@ -272,7 +290,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # LP: -> [volume, value]
         # Here, orders_i is a direct mapping to agent.wallet
         # Note normalize_time_to_maturity will always be 0 for LP positions
-        self.num_pool_features = len(self.env_config.pool_info_columns)
+        self.num_pool_features = len(self.env_config.pool_config_columns) + len(self.env_config.pool_info_columns)
         # Long and short features: token balance, pnl, time to maturity
         self.num_long_features = self.env_config.max_positions_per_type * 3
         self.num_short_features = self.env_config.max_positions_per_type * 3
@@ -280,7 +298,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         self.num_lp_features = 2
         inf = 1e10
         self._obs_space_in_preferred_format = True
-        # OS shape = # pool features + max positions per type x
+        # OS shape = # pool features + max positions per type x num position features e.g. token balance, pnl, maturity
         self.observation_space_shape = (
             self.num_pool_features + self.num_long_features + self.num_short_features + self.num_lp_features,
         )
@@ -702,9 +720,10 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # but it's constant within an episode, should we include it in the obs space?
         agents = agents or self.agents
         # Get the latest pool state feature from the db
-        pool_state_df = self.interactive_hyperdrive.get_pool_info(coerce_float=True)
-        pool_state_df = pool_state_df[self.env_config.pool_info_columns].iloc[-1].astype(float)
-        pool_features = pool_state_df.values.astype(np.float64)
+        pool_info_df = self.interactive_hyperdrive.get_pool_info(coerce_float=True)
+        pool_info_df = pool_info_df[self.env_config.pool_info_columns].iloc[-1].astype(float)
+        pool_info = pool_info_df.values.astype(np.float64)
+        pool_features = np.concatenate([pool_config, pool_info])
         # TODO can also add other features, e.g., opening spot price
 
         out_obs = {}
