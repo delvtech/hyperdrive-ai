@@ -719,6 +719,10 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # TODO: (dylan) If we're changing up pool config per episode (as we should be),
         # but it's constant within an episode, should we include it in the obs space?
         agents = agents or self.agents
+        # Get the pool config
+        pool_config_df = self.interactive_hyperdrive.get_pool_config(coerce_float=True)
+        pool_config_df = pool_config_df[self.env_config.pool_config_columns].astype(float)
+        pool_config = pool_config_df.values.astype(np.float64)
         # Get the latest pool state feature from the db
         pool_info_df = self.interactive_hyperdrive.get_pool_info(coerce_float=True)
         pool_info_df = pool_info_df[self.env_config.pool_info_columns].iloc[-1].astype(float)
