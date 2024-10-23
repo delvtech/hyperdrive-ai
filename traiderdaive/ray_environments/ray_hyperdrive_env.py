@@ -291,16 +291,26 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Here, orders_i is a direct mapping to agent.wallet
         # Note normalize_time_to_maturity will always be 0 for LP positions
         self.num_pool_features = len(self.env_config.pool_config_columns) + len(self.env_config.pool_info_columns)
+        # Time features: block timestamp and steps remaining
+        self.num_timing_features = 2
         # Long and short features: token balance, pnl, time to maturity
         self.num_long_features = self.env_config.max_positions_per_type * 3
         self.num_short_features = self.env_config.max_positions_per_type * 3
         # LP features: token balance, pnl
         self.num_lp_features = 2
+        # Additional features: pnl
+        self.num_wallet_features = 1
         inf = 1e10
         self._obs_space_in_preferred_format = True
-        # OS shape = # pool features + max positions per type x num position features e.g. token balance, pnl, maturity
+        # OS shape = # pool features + block time + steps remaining + max positions per type x num position features
+        # (e.g. token balance, pnl, maturity) + total pnl
         self.observation_space_shape = (
-            self.num_pool_features + self.num_long_features + self.num_short_features + self.num_lp_features,
+            self.num_pool_features
+            + self.num_timing_features
+            + self.num_long_features
+            + self.num_short_features
+            + self.num_lp_features
+            + self.num_wallet_features,
         )
         self.observation_space = spaces.Dict(
             {
@@ -716,62 +726,77 @@ class RayHyperdriveEnv(MultiAgentEnv):
         return info_dict
 
     def _get_observations(self, agents: Iterable[str] | None = None) -> dict[str, np.ndarray]:
-        # TODO: (dylan) If we're changing up pool config per episode (as we should be),
-        # but it's constant within an episode, should we include it in the obs space?
         agents = agents or self.agents
+        # Get the pool config
+        pool_config_df = self.interactive_hyperdrive.get_pool_config(coerce_float=True)
+        pool_config_df = pool_config_df[self.env_config.pool_config_columns].astype(float)
+        pool_config = pool_config_df.values.astype(np.float64)
         # Get the latest pool state feature from the db
         pool_info_df = self.interactive_hyperdrive.get_pool_info(coerce_float=True)
         pool_info_df = pool_info_df[self.env_config.pool_info_columns].iloc[-1].astype(float)
         pool_info = pool_info_df.values.astype(np.float64)
-        pool_features = np.concatenate([pool_config, pool_info])
+        # Get block timestamp and steps remaining. We convert timestamp to epoch time here
+        current_block = self.interactive_hyperdrive.interface.get_current_block()
+        timestamp = self.interactive_hyperdrive.interface.get_block_timestamp(current_block)
+        block_timestamp = np.array([timestamp], dtype=np.float64)
+        steps_remaining = np.array([self.env_config.episode_length - self._step_count], dtype=np.float64)
         # TODO can also add other features, e.g., opening spot price
 
         out_obs = {}
         for agent_id in agents:
             # Long Features: trade type, order_i -> [volume, value, normalized_time_remaining]
-            long_features = np.zeros(self.num_long_features)
+            long_features = np.zeros(self.num_long_features, dtype=np.float64)
             # Short Features: trade type, order_i -> [volume, value, normalized_time_remaining]
-            short_features = np.zeros(self.num_short_features)
+            short_features = np.zeros(self.num_short_features, dtype=np.float64)
             # LP: -> [volume, value]
-            lp_features = np.zeros(self.num_lp_features)
+            lp_features = np.zeros(self.num_lp_features, dtype=np.float64)
+            # Additional features: pnl
+            wallet_features = np.zeros(self.num_wallet_features, dtype=np.float64)
 
             # Observation data uses floats
-            agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=True, calc_pnl=True)
+            open_agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=True, calc_pnl=True)
+            all_agent_positions = self.rl_agents[agent_id].get_positions(
+                coerce_float=True, calc_pnl=True, show_closed_positions=True
+            )
 
-            if not agent_positions.empty:
+            if not open_agent_positions.empty:
                 position_duration = self.interactive_hyperdrive.config.position_duration
-                # We convert timestamp to epoch time here
                 # We keep negative values for time past maturity
-                current_block = self.interactive_hyperdrive.interface.get_current_block()
-                timestamp = self.interactive_hyperdrive.interface.get_block_timestamp(current_block)
-                agent_positions["normalized_time_remaining"] = (
-                    agent_positions["maturity_time"] - timestamp
+                open_agent_positions["normalized_time_remaining"] = (
+                    open_agent_positions["maturity_time"] - timestamp
                 ) / position_duration
 
-                long_orders = agent_positions[agent_positions["token_type"] == "LONG"]
+                long_orders = open_agent_positions[open_agent_positions["token_type"] == "LONG"]
                 # Ensure data is the same as the action space
                 long_orders = long_orders.sort_values("maturity_time")
                 long_orders = long_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
 
-                short_orders = agent_positions[agent_positions["token_type"] == "SHORT"]
+                short_orders = open_agent_positions[open_agent_positions["token_type"] == "SHORT"]
                 # Ensure data is the same as the action space
                 short_orders = short_orders.sort_values("maturity_time")
                 short_orders = short_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
 
-                lp_orders = agent_positions[agent_positions["token_type"] == "LP"]
+                lp_orders = open_agent_positions[open_agent_positions["token_type"] == "LP"]
                 lp_orders = lp_orders[["token_balance", "pnl"]].values.flatten()
 
                 # Add data to static size arrays
                 long_features[: len(long_orders)] = long_orders
                 short_features[: len(short_orders)] = short_orders
                 lp_features[: len(lp_orders)] = lp_orders
+                # Get PNL
+                total_pnl = np.array(all_agent_positions["pnl"].sum(), dtype=np.float64)
+                wallet_features[0] = total_pnl
 
             out_obs[agent_id] = np.concatenate(
                 [
-                    pool_features,
+                    pool_config,
+                    pool_info,
+                    block_timestamp,
+                    steps_remaining,
                     long_features,
                     short_features,
                     lp_features,
+                    wallet_features,
                 ]
             )
 
