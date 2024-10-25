@@ -84,6 +84,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
         num_random_bots: int = 0
         num_random_hold_bots: int = 0
         random_bot_budget: FixedPoint = FixedPoint(1_000_000)
+        # Bots for varying initial pool state on reset
+        num_reset_bots: int = 1
+        num_reset_trades: int = 2
 
         # TODO: Check if PPO is already sampling actions!
         sample_actions: bool = False
@@ -237,6 +240,18 @@ class RayHyperdriveEnv(MultiAgentEnv):
             ]
         )
 
+        self.reset_bots = [
+            self.chain.init_agent(
+                base=FixedPoint(1_000_000),
+                eth=FixedPoint(100),
+                pool=self.interactive_hyperdrive,
+                policy=PolicyZoo.random,
+                policy_config=PolicyZoo.random.Config(rng_seed=i),
+                name="reset_bot_" + str(i),
+            )
+            for i in range(self.env_config.num_reset_bots)
+        ]
+
         self.interactive_hyperdrive.sync_database()
 
         # Save a snapshot of initial conditions for resets
@@ -389,8 +404,6 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Load the snapshot for initial conditions
         self.chain.load_snapshot()
 
-        self.interactive_hyperdrive.sync_database()
-
         # Reset internal member variables
         self._prev_pnls: dict[str, float] = {agent_id: 0.0 for agent_id in self.agents}
         self._step_count = 0
@@ -400,11 +413,42 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Call reset on variable rate policy
         self.env_config.variable_rate_policy.reset(self.rng)
 
+        if self.reset_bots:
+            self._random_trades_on_reset()
+
+        self.interactive_hyperdrive.sync_database()
         # Get first observation and info
         observations = self._get_observations()
         info = self._get_info()
 
         return observations, info
+
+    def _random_trades_on_reset(self) -> None:
+        """Use bots to make some random trades to vary the inital pool state at the beginning of an episode."""
+        # TODO: Use HyperdriveAgent.open_long(), etc for precise control over these trades.
+        for bot in self.reset_bots:
+            # Execute random trades
+            for _ in range(self.env_config.num_reset_trades):
+                try:
+                    bot.execute_policy_action()
+                except BaseException as err:  # pylint: disable=broad-except
+                    self.logger.warning(f"Failed to execute reset bot: {repr(err)}")
+                    continue
+            # Finally add random liquidity (~10% of bots budget)
+            active_pool = bot._active_pool
+            active_policy = bot._active_policy
+            try:
+                active_policy.add_liquidity_with_random_amount(
+                    interface=active_pool.interface.get_read_interface(), wallet=bot.get_wallet(active_pool)
+                )
+                print(f"\n{'@' * 20}\nEXECUTED LP\n{'@' * 20}\n")
+
+            except BaseException as err:  # pylint: disable=broad-except
+                self.logger.warning(f"Failed to execute reset bot: {repr(err)}")
+                print(f"\n{'@' * 20}\nFAILED\n{'@' * 20}\n")
+
+        # TODO: Should we advance a whole position duration here?
+        self.chain.advance_time(self.env_config.step_advance_time, create_checkpoints=True)
 
     def _get_hyperdrive_pool_config(self) -> LocalHyperdrive.Config:
         """Get the Hyperdrive pool config."""
