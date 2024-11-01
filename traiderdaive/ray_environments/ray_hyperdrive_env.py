@@ -84,9 +84,8 @@ class RayHyperdriveEnv(MultiAgentEnv):
         num_random_bots: int = 0
         num_random_hold_bots: int = 0
         random_bot_budget: FixedPoint = FixedPoint(1_000_000)
-        # Bots for varying initial pool state on reset
-        num_reset_bots: int = 1
-        num_reset_trades: int = 2
+        # Vary the pool state on reset with random trades
+        reset_with_random_trades: bool = True
 
         # TODO: Check if PPO is already sampling actions!
         sample_actions: bool = False
@@ -240,17 +239,16 @@ class RayHyperdriveEnv(MultiAgentEnv):
             ]
         )
 
-        self.reset_bots = [
-            self.chain.init_agent(
+        # Initialize a bot for random trades on reset
+        if self.env_config.reset_with_random_trades:
+            self.reset_bot = self.chain.init_agent(
                 base=FixedPoint(1_000_000),
                 eth=FixedPoint(100),
                 pool=self.interactive_hyperdrive,
                 policy=PolicyZoo.random,
-                policy_config=PolicyZoo.random.Config(rng_seed=i),
-                name="reset_bot_" + str(i),
+                policy_config=PolicyZoo.random.Config(),
+                name="reset_bot",
             )
-            for i in range(self.env_config.num_reset_bots)
-        ]
 
         self.interactive_hyperdrive.sync_database()
 
@@ -413,7 +411,7 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Call reset on variable rate policy
         self.env_config.variable_rate_policy.reset(self.rng)
 
-        if self.reset_bots:
+        if self.env_config.reset_with_random_trades:
             self._random_trades_on_reset()
 
         self.interactive_hyperdrive.sync_database()
@@ -424,31 +422,35 @@ class RayHyperdriveEnv(MultiAgentEnv):
         return observations, info
 
     def _random_trades_on_reset(self) -> None:
-        """Use bots to make some random trades to vary the inital pool state at the beginning of an episode."""
-        # TODO: Use HyperdriveAgent.open_long(), etc for precise control over these trades.
-        for bot in self.reset_bots:
-            # Execute random trades
-            for _ in range(self.env_config.num_reset_trades):
-                try:
-                    bot.execute_policy_action()
-                except BaseException as err:  # pylint: disable=broad-except
-                    self.logger.warning(f"Failed to execute reset bot: {repr(err)}")
-                    continue
-            # Finally add random liquidity (~10% of bots budget)
-            active_pool = bot._active_pool
-            active_policy = bot._active_policy
-            try:
-                active_policy.add_liquidity_with_random_amount(
-                    interface=active_pool.interface.get_read_interface(), wallet=bot.get_wallet(active_pool)
-                )
-                print(f"\n{'@' * 20}\nEXECUTED LP\n{'@' * 20}\n")
-
-            except BaseException as err:  # pylint: disable=broad-except
-                self.logger.warning(f"Failed to execute reset bot: {repr(err)}")
-                print(f"\n{'@' * 20}\nFAILED\n{'@' * 20}\n")
-
-        # TODO: Should we advance a whole position duration here?
-        self.chain.advance_time(self.env_config.step_advance_time, create_checkpoints=True)
+        """Use a bot to make a random trade at the beginning of an episode to vary the inital pool state."""
+        min_trade_amount = 1
+        long = self.rng.choice([True, False])
+        if long:
+            max_long = float(
+                self.interactive_hyperdrive.interface.calc_max_long(budget=FixedPoint(1e59)) / FixedPoint(100)
+            )
+            trade_amount = FixedPoint(self.rng.uniform(min_trade_amount, max_long))
+            self.reset_bot.add_funds(base=trade_amount, eth=FixedPoint(100_000))
+            trade = self.reset_bot.open_long(trade_amount)
+        else:
+            max_short = float(
+                self.interactive_hyperdrive.interface.calc_max_short(budget=FixedPoint(1e59)) / FixedPoint(100)
+            )
+            trade_amount = FixedPoint(self.rng.uniform(min_trade_amount, max_short))
+            self.reset_bot.add_funds(base=trade_amount, eth=FixedPoint(100_000))
+            trade = self.reset_bot.open_short(trade_amount)
+        liquidity_amount = FixedPoint(
+            self.rng.uniform(
+                float(self.interactive_hyperdrive.config.initial_liquidity / 100),
+                float(self.interactive_hyperdrive.config.initial_liquidity),
+            )
+        )
+        self.reset_bot.add_funds(base=liquidity_amount)
+        self.reset_bot.add_liquidity(liquidity_amount)
+        if long:
+            self.reset_bot.close_long(trade.args.maturity_time, trade.args.bond_amount)
+        else:
+            self.reset_bot.close_short(trade.args.maturity_time, trade.args.bond_amount)
 
     def _get_hyperdrive_pool_config(self) -> LocalHyperdrive.Config:
         """Get the Hyperdrive pool config."""
