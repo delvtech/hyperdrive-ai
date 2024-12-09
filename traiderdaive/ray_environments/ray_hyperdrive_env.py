@@ -16,6 +16,7 @@ from gymnasium import spaces
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from scipy.special import expit
 
+from .base_env import BaseEnv
 from .rewards import DeltaPnl
 from .variable_rate_policy import RandomNormalVariableRate, VariableRatePolicy
 
@@ -36,59 +37,19 @@ class TradeTypes(Enum):
     SHORT = 1
 
 
-class RayHyperdriveEnv(MultiAgentEnv):
+class RayHyperdriveEnv(BaseEnv):
     """A simple hyperdrive environment that allows for 2 positions, long and short."""
 
     # pylint: disable=too-many-instance-attributes
 
     @dataclass(kw_only=True)
-    class Config:
+    class Config(BaseEnv.Config):
         """The configuration for RayHyperdriveEnv."""
 
-        # How to render the environment
-        # TODO figure out what this does
-        render_mode: str | None = None
-
-        # Experiment Config
-        position_reward_scale: float = 1
-        # Number of RayHyperdriveEnv steps per episode
-        episode_length: int = 50
-        # Number of episodes for each training step
-        num_episodes_per_update: int = 5
-        # Number of training iterations (after rollouts have been collected)
-        num_epochs_sgd: int = 10
-        # Number of interations of the full train loop (collecting rollouts & training model)
-        # One set of rollouts is {num_episodes_per_update * episode_length} env steps
-        # One training loop is {num_epochs_sgd} iterations training on rollouts
-        num_training_loops: int = 100000
-
-        # Hyperdrive Config
-        # How much to advance time per step
-        step_advance_time: int = 8 * 3600  # 8 hours
-
         # Reward and variable rate policy
-        reward_policy: Type[BaseReward] = field(default=DeltaPnl)
+        # Note both of these policies are specific to hyperdrive
         variable_rate_policy: VariableRatePolicy = field(default=RandomNormalVariableRate())
-
-        # RL Agents Config
-        num_agents: int = 4
-        # The constant trade amounts for longs and shorts
-        rl_agent_budget: FixedPoint = FixedPoint(1_000_000)
-        max_positions_per_type: int = 10
-        base_reward_scale: float = 0.0
-        # The threshold for the probability of opening and closing orders
-        open_threshold: float = 0.5
-        close_threshold: float = 0.5
-
-        # Other bots config
-        num_random_bots: int = 0
-        num_random_hold_bots: int = 0
-        random_bot_budget: FixedPoint = FixedPoint(1_000_000)
-
-        # TODO: Check if PPO is already sampling actions!
-        sample_actions: bool = False
-        # Sets alternate ports for eval to avoid connecting to a training chain
-        eval_mode: bool = False
+        reward_policy: Type[BaseReward] = field(default=DeltaPnl)
 
         # Defines which columns from pool config to include in the observation space
         pool_config_columns: list[str] = field(
@@ -141,109 +102,43 @@ class RayHyperdriveEnv(MultiAgentEnv):
     # Defines allowed render modes and fps
     metadata = {"render_modes": ["human"], "render_fps": 4}
 
-    def __init__(
-        self,
-        env_config,
-    ):
-        """Initializes the environment"""
-        self.worker_index = env_config.worker_index
-
+    def init_config(self, env_config):
         if env_config.get("env_config") is None:
             self.env_config = self.Config()
         else:
             self.env_config = env_config["env_config"]
-        # TODO parameterize these in the gym config
+            assert isinstance(self.env_config, RayHyperdriveEnv.Config)
 
-        # Multiagent setup
-        self.agents = {f"{AGENT_PREFIX}{i}" for i in range(self.env_config.num_agents)}
-        self._agent_ids = self.agents
-        self.terminateds = set()
-        self.truncateds = set()
-
-        self.eval_mode = self.env_config.eval_mode
-        self.sample_actions = self.env_config.sample_actions
-        if self.eval_mode:
-            db_port = 5434
-            chain_port = 10001
-        else:
-            db_port = 5435 + self.worker_index
-            chain_port = 10002 + self.worker_index
-
-        local_chain_config = LocalChain.Config(
-            block_timestamp_interval=12,
-            db_port=db_port,
-            chain_port=chain_port,
-            calc_pnl=self.eval_mode,
-            manual_database_sync=(not self.eval_mode),
-            backfill_pool_info=False,
-        )
-
+    def setup_environment(self):
         initial_pool_config = self._get_hyperdrive_pool_config()
-        self.chain = LocalChain(local_chain_config)
         self.interactive_hyperdrive = LocalHyperdrive(self.chain, initial_pool_config)
 
         if self.eval_mode and self.worker_index == 0:
             self.chain.run_dashboard()
 
-        # Instantiate the random number generator
-        random_seed = np.random.randint(1, 99999) + self.worker_index
-        self.rng = np.random.default_rng(random_seed)
-
-        # Define the rl agents
-        self.rl_agents = {
-            name: self.chain.init_agent(
-                base=self.env_config.rl_agent_budget,
-                eth=FixedPoint(100),
-                pool=self.interactive_hyperdrive,
-                name=name,
-            )
-            for name in self.agents
-        }
-
-        # Define the random bots
-        self.random_bots = [
-            self.chain.init_agent(
-                base=self.env_config.random_bot_budget,
-                eth=FixedPoint(100),
-                pool=self.interactive_hyperdrive,
-                policy=PolicyZoo.random,
-                # TODO set the seed per random bot here for reproducibility
-                # TODO omitting rng_seed results in the same random generators
-                # for all bots, fix
-                policy_config=PolicyZoo.random.Config(rng_seed=i),
-                name="random_bot_" + str(i),
-            )
-            for i in range(self.env_config.num_random_bots)
-        ]
-
-        self.random_bots.extend(
-            [
-                self.chain.init_agent(
-                    base=self.env_config.random_bot_budget,
-                    eth=FixedPoint(100),
-                    pool=self.interactive_hyperdrive,
-                    policy=PolicyZoo.random_hold,
-                    # TODO set the seed per random bot here for reproducibility
-                    policy_config=PolicyZoo.random_hold.Config(
-                        trade_chance=FixedPoint("0.8"),
-                        max_open_positions_per_pool=1000,
-                        # TODO omitting rng_seed results in the same random generators
-                        # for all bots, fix
-                        rng_seed=self.env_config.num_random_bots + i,
-                    ),
-                    name="random_hold_bot_" + str(i),
-                )
-                for i in range(self.env_config.num_random_hold_bots)
-            ]
-        )
+        for agent in self.agents.values():
+            agent.set_active(pool=self.interactive_hyperdrive)
 
         self.interactive_hyperdrive.sync_database()
 
-        # Save a snapshot of initial conditions for resets
-        self.chain.save_snapshot()
+        # Setup the reward policy
+        self.reward = self.env_config.reward_policy(env=self)
 
-        assert self.env_config.render_mode is None or self.env_config.render_mode in self.metadata["render_modes"]
-        self.render_mode = self.env_config.render_mode
+    def reset_env(self):
+        self.interactive_hyperdrive.sync_database()
+        # Call reset on variable rate policy
+        self.env_config.variable_rate_policy.reset(self.rng)
+
+    def create_action_space(self) -> spaces.Box:
+        """
+        Function to create the action space for the environment.
+
+        TODO there may be things we can abstract out here for a general purpose
+        trading environment.
+
+        TODO define this space in a dictionary format for readability,
+        and flatten in base environment.
+        """
 
         # The space of allowed actions to take
         # Following https://github.com/AminHP/gym-mtsim
@@ -276,10 +171,18 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # first TradeTypes * `max_positions_per_type` is for closing existing positions
         # the + TradeTypes * 2 is for opening a new trade (2 indicates probability & volume)
         # the +4 is for LP
-        self.action_length_per_trade_set = len(TradeTypes) * (self.env_config.max_positions_per_type + 2) + 4
+        # (longs, shorts) -> close_order_i(logit), new_order(logit), volume)
+        # (lp) -> add_lp_order(logit), volume_add_lp, remove_lp_order(logit), volume_remove_lp)
 
-        self.create_action_space()
+        action_length_per_trade_set = len(TradeTypes) * (self.env_config.max_positions_per_type + 2) + 4
+        return spaces.Box(
+            low=-1e2,
+            high=1e2,
+            dtype=np.float64,
+            shape=(action_length_per_trade_set,),
+        )
 
+    def create_observation_space(self) -> spaces.Dict:
         # Observation space is
         # TODO add more features
         # Pool Features: spot price, lp share price
@@ -290,9 +193,9 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # LP: -> [volume, value]
         # Here, orders_i is a direct mapping to agent.wallet
         # Note normalize_time_to_maturity will always be 0 for LP positions
-        self.num_pool_features = len(self.env_config.pool_config_columns) + len(self.env_config.pool_info_columns)
+        num_pool_features = len(self.env_config.pool_config_columns) + len(self.env_config.pool_info_columns)
         # Time features: block timestamp and steps remaining
-        self.num_timing_features = 2
+        num_timing_features = 2
         # Long and short features: token balance, pnl, time to maturity
         self.num_long_features = self.env_config.max_positions_per_type * 3
         self.num_short_features = self.env_config.max_positions_per_type * 3
@@ -301,110 +204,27 @@ class RayHyperdriveEnv(MultiAgentEnv):
         # Additional features: pnl
         self.num_wallet_features = 1
         inf = 1e10
-        self._obs_space_in_preferred_format = True
         # OS shape = # pool features + block time + steps remaining + max positions per type x num position features
         # (e.g. token balance, pnl, maturity) + total pnl
-        self.observation_space_shape = (
-            self.num_pool_features
-            + self.num_timing_features
+        observation_space_shape = (
+            num_pool_features
+            + num_timing_features
             + self.num_long_features
             + self.num_short_features
             + self.num_lp_features
             + self.num_wallet_features,
         )
-        self.observation_space = spaces.Dict(
+        return spaces.Dict(
             {
                 agent_id: spaces.Box(
                     low=-inf,
                     high=inf,
-                    shape=self.observation_space_shape,
+                    shape=observation_space_shape,
                     dtype=np.float64,
                 )
                 for agent_id in self.agents
             }
         )
-
-        # episode variables
-        self._prev_pnls: dict[str, float] = {agent_id: 0.0 for agent_id in self.agents}
-        self._step_count = 0
-
-        # setup logger
-        self.logger = logging.getLogger()
-        self.logger.info("rng seed: " + str(random_seed))
-        super().__init__()
-
-        # Setup the reward
-        self.reward = self.env_config.reward_policy(env=self)
-
-    def __del__(self) -> None:
-        self.chain.cleanup()
-
-    def create_action_space(self) -> None:
-        """Create the action space object & assign it to self."""
-        # (longs, shorts) -> close_order_i(logit), new_order(logit), volume)
-        # (lp) -> add_lp_order(logit), volume_add_lp, remove_lp_order(logit), volume_remove_lp)
-        self._action_space_in_preferred_format = True
-        self.action_space = spaces.Dict(
-            {
-                agent_id: spaces.Box(
-                    low=-1e2,
-                    high=1e2,
-                    dtype=np.float64,
-                    shape=(self.action_length_per_trade_set,),
-                )
-                for agent_id in self.agents
-            }
-        )
-
-    def reset(
-        self,
-        *,
-        seed: int | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
-        """Resets the environment to an initial internal state.
-
-        Arguments
-        ---------
-        seed: int | None
-            The seed to initialize the random generator to pass for each bot
-        options: dict[str, Any] | None
-            Additional information to specify how the environment is reset (optional,
-            depending on the specific environment)
-
-        Returns
-        -------
-        tuple[np.ndarray, dict[str, Any]]
-            The observation and info from the environment
-        """
-
-        # TODO do random seeds properly
-        super().reset(seed=seed)
-
-        # TODO randomize pool parameters here
-        # We can do this by deploying a new pool
-        # For now, we use a single pool with default parameters
-        # and use snapshotting to reset
-
-        # Load the snapshot for initial conditions
-        self.chain.load_snapshot()
-
-        self.interactive_hyperdrive.sync_database()
-
-        # Reset internal member variables
-        self._prev_pnls: dict[str, float] = {agent_id: 0.0 for agent_id in self.agents}
-        self._step_count = 0
-        self.terminateds = set()
-        self.truncateds = set()
-
-        # Call reset on variable rate policy
-        self.env_config.variable_rate_policy.reset(self.rng)
-
-        # Get first observation and info
-        observations = self._get_observations()
-        info = self._get_info()
-
-        return observations, info
 
     def _get_hyperdrive_pool_config(self) -> LocalHyperdrive.Config:
         """Get the Hyperdrive pool config."""
