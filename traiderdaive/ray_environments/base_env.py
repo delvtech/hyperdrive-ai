@@ -101,6 +101,10 @@ class BaseEnv(MultiAgentEnv):
         """
         raise NotImplementedError
 
+    def reset_env(self):
+        """Resets any custom state environment."""
+        raise NotImplementedError
+
     def create_action_space(self) -> spaces.Box:
         """Function to create the action space for a single agent in the environment."""
         raise NotImplementedError
@@ -128,7 +132,8 @@ class BaseEnv(MultiAgentEnv):
         # Default behavior is no op
         pass
 
-    def calculate_agent_reward(self, agent: LocalHyperdriveAgent) -> dict[str, float]:
+    def calculate_agent_reward(self, agent: LocalHyperdriveAgent) -> float:
+        """Function to calculate the reward for a single RL agent."""
         raise NotImplementedError
 
     ######### Setup functions ########
@@ -256,10 +261,6 @@ class BaseEnv(MultiAgentEnv):
         info = self._get_info()
 
         return observations, info
-
-    def reset_env(self):
-        """Resets any custom state environment."""
-        raise NotImplementedError
 
     def step(
         self, action_dict: dict[str, np.ndarray]
