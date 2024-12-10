@@ -104,9 +104,6 @@ class RayHyperdriveEnv(BaseEnv):
 
     env_config: RayHyperdriveEnv.Config
 
-    # Defines allowed render modes and fps
-    metadata = {"render_modes": ["human"], "render_fps": 4}
-
     def init_config(self, env_config) -> None:
         if env_config.get("env_config") is None:
             self.env_config = self.Config()
