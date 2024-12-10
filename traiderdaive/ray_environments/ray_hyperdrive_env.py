@@ -107,7 +107,7 @@ class RayHyperdriveEnv(BaseEnv):
     # Defines allowed render modes and fps
     metadata = {"render_modes": ["human"], "render_fps": 4}
 
-    def init_config(self, env_config):
+    def init_config(self, env_config) -> None:
         if env_config.get("env_config") is None:
             self.env_config = self.Config()
         else:
@@ -197,21 +197,7 @@ class RayHyperdriveEnv(BaseEnv):
         """Get the Hyperdrive pool config."""
         return LocalHyperdrive.Config()
 
-    def apply_action(self, agent: LocalHyperdriveAgent, action: np.ndarray) -> list[bool]:
-        """Execute the bot action on-chain.
-
-        Arguments
-        ---------
-        agent_id: str
-            Unique identifying string for the agent.
-        action: np.ndarray
-            Action activations returned by the policy network.
-
-        Returns
-        -------
-        bool
-            True if the trade was successful, False otherwise.
-        """
+    def apply_action(self, agent: LocalHyperdriveAgent, action: np.ndarray) -> bool:
         # TODO
         # pylint: disable=too-many-locals
         # pylint: disable=too-many-branches
@@ -263,7 +249,7 @@ class RayHyperdriveEnv(BaseEnv):
         # LP trade
         trade_success[-1] = self._apply_lp_trades(agent, min_tx_amount, lp_actions)
 
-        return trade_success
+        return all(trade_success)
 
     def _apply_lp_trades(self, agent: LocalHyperdriveAgent, min_tx_amount: FixedPoint, lp_actions: np.ndarray) -> bool:
         """Apply the LP trades."""

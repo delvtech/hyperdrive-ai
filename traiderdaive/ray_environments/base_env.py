@@ -78,15 +78,28 @@ class BaseEnv(MultiAgentEnv):
     # Defines allowed render modes and fps
     metadata = {"render_modes": ["human"], "render_fps": 4}
 
-    ######### Public member variables ########
+    ######### Public member variables to be used by subclasses ########
     worker_index: int
+    """The ray worker index for this instantiation."""
     env_config: Config
+    """The environment configuration."""
     rng: Generator
+    """The random number generator object."""
     chain: LocalChain
+    """The local chain object."""
     agents: dict[str, LocalHyperdriveAgent]
+    """The agents in the multiagent environment."""
 
     ######### Subclass functions ########
-    def init_config(self, env_config):
+    def init_config(self, env_config) -> None:
+        """Function to (1) ensure the env_config is set and typed correctly, and (2)
+        set any variable shortcuts needed from the env config.
+
+        Arguments
+        ---------
+        env_config: Any
+            The environment configuration passed in from the runner.
+        """
         # TODO there may be a way to implement this in the base class such that
         # self.env_config gets set to the proper config type
         if env_config.get("env_config") is None:
@@ -95,22 +108,38 @@ class BaseEnv(MultiAgentEnv):
             self.env_config = env_config["env_config"]
             assert isinstance(self.env_config, BaseEnv.Config)
 
-    def setup_environment(self):
+    def setup_environment(self) -> None:
         """Function to run initial setup of the RL environment. For example,
         this is where we can fund agents.
         """
         raise NotImplementedError
 
-    def reset_env(self):
-        """Resets any custom state environment."""
+    def reset_env(self) -> None:
+        """Function to run on `reset` that resets any custom state environment.
+        Note `load_snapshot` gets called for anything on the chain,
+        so this function only needs to reset any custom state managed in the subclass environment.
+        E.g., resetting the variable interest policy.
+        """
         raise NotImplementedError
 
     def create_action_space(self) -> spaces.Box:
-        """Function to create the action space for a single agent in the environment."""
+        """Function to create the action space for a single agent in the environment.
+
+        Returns
+        ---------
+        spaces.Box
+            The action space for a single agent in the environment.
+        """
         raise NotImplementedError
 
     def get_shared_observation(self) -> np.ndarray:
-        """Function to gather observations that are shared across all RL agents."""
+        """Function to gather observations that are shared across all RL agents.
+
+        Returns
+        ---------
+        np.ndarray
+            The 1D shared observations.
+        """
         # Defaults to returning empty array
         return np.zeros(shape=(0,))
 
@@ -119,12 +148,35 @@ class BaseEnv(MultiAgentEnv):
 
         TODO the agents here are hyperdrive agents, but ideally they would be generic agents
         for all types of environments.
+
+        Arguments
+        ---------
+        agent: LocalHyperdriveAgent
+            The agent to get observations for.
+
+        Returns
+        ---------
+        np.ndarray
+            The 1D observations for the agent.
         """
         # Defaults to returning empty array
         return np.zeros(shape=(0,))
 
-    def apply_action(self, agent: LocalHyperdriveAgent, action: np.ndarray):
-        """Function to apply an action to the environment."""
+    def apply_action(self, agent: LocalHyperdriveAgent, action: np.ndarray) -> bool:
+        """Function to apply an action to the environment.
+
+        Arguments
+        ---------
+        agent: LocalHyperdriveAgent
+            The agent to apply the action to.
+        action: np.ndarray
+            The action to apply to the agent, encoded as an ndarray, as specified in `create_action_space`.
+
+        Returns
+        -------
+        bool
+            True if the trade was successful, False otherwise.
+        """
         raise NotImplementedError
 
     def step_environment(self):
@@ -133,7 +185,18 @@ class BaseEnv(MultiAgentEnv):
         pass
 
     def calculate_agent_reward(self, agent: LocalHyperdriveAgent) -> float:
-        """Function to calculate the reward for a single RL agent."""
+        """Function to calculate the reward for a single RL agent.
+
+        Arguments
+        ---------
+        agent: LocalHyperdriveAgent
+            The agent to calculate the reward for.
+
+        Returns
+        -------
+        float
+            The reward for the agent.
+        """
         raise NotImplementedError
 
     ######### Setup functions ########
