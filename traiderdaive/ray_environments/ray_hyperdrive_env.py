@@ -139,8 +139,7 @@ class RayHyperdriveEnv(BaseEnv):
         # TODO do we also need to reset the reward policy?
 
     def create_action_space(self) -> spaces.Box:
-        """
-        Function to create the action space for a single agent in the environment.
+        """Function to create the action space for a single agent in the environment.
 
         TODO there may be things we can abstract out here for a general purpose
         trading environment.
@@ -183,12 +182,12 @@ class RayHyperdriveEnv(BaseEnv):
         # (longs, shorts) -> close_order_i(logit), new_order(logit), volume)
         # (lp) -> add_lp_order(logit), volume_add_lp, remove_lp_order(logit), volume_remove_lp)
 
-        action_length_per_trade_set = len(TradeTypes) * (self.env_config.max_positions_per_type + 2) + 4
+        self.action_length_per_trade_set = len(TradeTypes) * (self.env_config.max_positions_per_type + 2) + 4
         return spaces.Box(
             low=-1e2,
             high=1e2,
             dtype=np.float64,
-            shape=(action_length_per_trade_set,),
+            shape=(self.action_length_per_trade_set,),
         )
 
     def _get_hyperdrive_pool_config(self) -> LocalHyperdrive.Config:
