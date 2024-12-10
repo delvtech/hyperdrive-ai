@@ -13,6 +13,7 @@ import numpy as np
 from agent0 import LocalChain, LocalHyperdrive, PolicyZoo
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
+from numpy.random import Generator
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from scipy.special import expit
 
@@ -20,6 +21,8 @@ from .rewards import DeltaPnl
 from .variable_rate_policy import RandomNormalVariableRate, VariableRatePolicy
 
 if TYPE_CHECKING:
+    from agent0.core.hyperdrive.interactive.local_hyperdrive_agent import LocalHyperdriveAgent
+
     from .rewards.base_reward import BaseReward
 
 AGENT_PREFIX = "agent"
@@ -76,12 +79,48 @@ class BaseEnv(MultiAgentEnv):
     # Defines allowed render modes and fps
     metadata = {"render_modes": ["human"], "render_fps": 4}
 
+    ######### Public member variables ########
+    worker_index: int
+    env_config: Config
+    rng: Generator
+    chain: LocalChain
+    agents: dict[str, LocalHyperdriveAgent]
+
+    ######### Subclass functions ########
     def init_config(self, env_config):
+        # TODO there may be a way to implement this in the base class such that
+        # self.env_config gets set to the proper config type
         if env_config.get("env_config") is None:
             self.env_config = self.Config()
         else:
             self.env_config = env_config["env_config"]
             assert isinstance(self.env_config, BaseEnv.Config)
+
+    def setup_environment(self):
+        """Function to run initial setup of the RL environment. For example,
+        this is where we can fund agents.
+        """
+        raise NotImplementedError
+
+    def create_action_space(self) -> spaces.Box:
+        """Function to create the action space for a single agent in the environment."""
+        raise NotImplementedError
+
+    def get_shared_observation(self) -> np.ndarray:
+        """Function to gather observations that are shared across all RL agents."""
+        # Defaults to returning empty array
+        return np.zeros(shape=(0,))
+
+    def get_agent_observation(self, agent: LocalHyperdriveAgent) -> np.ndarray:
+        """Function to gather observations from the environment for the RL agent.
+
+        TODO the agents here are hyperdrive agents, but ideally they would be generic agents
+        for all types of environments.
+        """
+        # Defaults to returning empty array
+        return np.zeros(shape=(0,))
+
+    ######### Setup functions ########
 
     # FIXME give type to env_config
     def __init__(
@@ -90,39 +129,41 @@ class BaseEnv(MultiAgentEnv):
     ):
         """Initializes the environment"""
         self.worker_index = env_config.worker_index
-
         self.init_config(env_config)
 
         # Multiagent setup
         self._terminateds = set()
         self._truncateds = set()
 
-        self.eval_mode = self.env_config.eval_mode
-        self.sample_actions = self.env_config.sample_actions
-        if self.eval_mode:
+        eval_mode = self.env_config.eval_mode
+        if eval_mode:
             db_port = 5434
             chain_port = 10001
         else:
             db_port = 5435 + self.worker_index
             chain_port = 10002 + self.worker_index
 
+        # Instantiate the random number generator
+        random_seed = np.random.randint(1, 99999) + self.worker_index
+        self.rng = np.random.default_rng(random_seed)
+
+        # Set up chain
         local_chain_config = LocalChain.Config(
             block_timestamp_interval=12,
             db_port=db_port,
             chain_port=chain_port,
-            calc_pnl=self.eval_mode,
-            manual_database_sync=(not self.eval_mode),
+            calc_pnl=eval_mode,
+            manual_database_sync=(not eval_mode),
             backfill_pool_info=False,
         )
 
         self.chain = LocalChain(local_chain_config)
 
-        # Instantiate the random number generator
-        random_seed = np.random.randint(1, 99999) + self.worker_index
-        self.rng = np.random.default_rng(random_seed)
-
-        # Define the rl agents
+        # Define agents
+        assert self.env_config.num_agents > 0
         self._agent_ids = {f"{AGENT_PREFIX}{i}" for i in range(self.env_config.num_agents)}
+        # TODO using agent0's agents for now, which is tied to hyperdrive. Ideally
+        # these agents would be general purpose.
         self.agents = {
             agent_id: self.chain.init_agent(
                 base=self.env_config.rl_agent_budget,
@@ -138,13 +179,12 @@ class BaseEnv(MultiAgentEnv):
         # Save a snapshot of initial conditions for resets
         self.chain.save_snapshot()
 
+        # Set necessary member variables needed by the underlying environment class
         assert self.env_config.render_mode is None or self.env_config.render_mode in self.metadata["render_modes"]
         self.render_mode = self.env_config.render_mode
-
+        # Set up action and observation space
         self.action_space = spaces.Dict({agent_id: self.create_action_space() for agent_id in self._agent_ids})
-        self.observation_space = self.create_observation_space()
-
-        # These variables are needed by the base class
+        self.observation_space = self._create_observation_space()
         self._action_space_in_preferred_format = True
         self._obs_space_in_preferred_format = True
 
@@ -156,20 +196,6 @@ class BaseEnv(MultiAgentEnv):
         self.logger = logging.getLogger()
         self.logger.info("rng seed: " + str(random_seed))
         super().__init__()
-
-    def setup_environment(self):
-        """Function to run initial setup of the RL environment. For example,
-        this is where we can fund agents.
-        """
-        raise NotImplementedError
-
-    def create_action_space(self) -> spaces.Box:
-        """Function to create the action space for the environment."""
-        raise NotImplementedError
-
-    def create_observation_space(self) -> spaces.Dict:
-        """Function to create the observation space for the environment."""
-        raise NotImplementedError
 
     def __del__(self) -> None:
         self.chain.cleanup()
@@ -273,21 +299,12 @@ class BaseEnv(MultiAgentEnv):
         # TODO: _apply_action() is per agent_id, but _get_observations() is for all agents. Make this consistent?
         # TODO: Verify that truncated/terminated are being used correctly here. Do we need self.terminateds?
         self.logger.info(f"\nStep {self._step_count} Time: {datetime.now().strftime('%I:%M:%S %p')}")
+
         # Do actions and get truncated status for agents provided, and set the rest to True
         self.interactive_hyperdrive.sync_database()
 
         for agent_id, action in action_dict.items():
             _ = self._apply_action(agent_id, action)
-
-        # Run other bots
-        # Suppress logging here
-        for random_bot in self.random_bots:
-            try:
-                random_bot.execute_policy_action()
-            except BaseException as err:  # pylint: disable=broad-except
-                self.logger.warning(f"Failed to execute random bot: {repr(err)}")
-                # We ignore errors in random bots
-                continue
 
         # We minimize time between bot making an action, so we advance time after actions have been made
         # but before the observation
@@ -322,89 +339,61 @@ class BaseEnv(MultiAgentEnv):
         # TODO when does the episode stop?
         return observations, step_rewards, terminateds, truncateds, info
 
+    def _create_observation_space(self) -> spaces.Dict:
+        """Function to get observations from the environment, and create the observation space."""
+        observation = self._get_observations()
+        obs_shape = None
+        out_obs_space = {}
+        for agent_id, obs in observation.items():
+            curr_obs_shape = obs.shape
+            assert len(curr_obs_shape) == 1, "Observation space must be 1D"
+            if obs_shape is None:
+                obs_shape = curr_obs_shape
+            else:
+                assert obs_shape == curr_obs_shape, "Observation space must be the same for all agents"
+
+            out_obs_space[agent_id] = spaces.Box(
+                low=-np.inf,
+                high=np.inf,
+                shape=obs_shape,
+                dtype=np.float32,
+            )
+        return spaces.Dict(out_obs_space)
+
+    def _get_observations(self, agents: Iterable[str] | None = None) -> dict[str, np.ndarray]:
+        """Function to get observations from the environment.
+
+        This function calls `get_shared_observation` and `get_agent_observation`,
+        and concatenates them into a single observation for each agent
+        """
+        # Agents passed in means it might be a subset of agents being called.
+        if agents is None:
+            agents = self.agents
+        else:
+            agents = {agent_id: self.agents[agent_id] for agent_id in agents}
+
+        shared_observations = self.get_shared_observation()
+        out_obs = {}
+        for agent_id in agents:
+            agent_observations = self.get_agent_observation(agents[agent_id])
+            out_obs[agent_id] = np.concatenate(
+                [shared_observations, agent_observations],
+            )
+        return out_obs
+
     def _get_info(self, agents: Iterable[str] | None = None) -> dict:
+        # TODO expose get_info to subclasses
         agents = agents or self._agent_ids
         info_dict = {agent_id: {} for agent_id in agents}
         return info_dict
 
-    def _get_observations(self, agents: Iterable[str] | None = None) -> dict[str, np.ndarray]:
-        agents = agents or self._agent_ids
-        # Get the pool config
-        pool_config_df = self.interactive_hyperdrive.get_pool_config(coerce_float=True)
-        pool_config_df = pool_config_df[self.env_config.pool_config_columns].astype(float)
-        pool_config = pool_config_df.values.astype(np.float64)
-        # Get the latest pool state feature from the db
-        pool_info_df = self.interactive_hyperdrive.get_pool_info(coerce_float=True)
-        pool_info_df = pool_info_df[self.env_config.pool_info_columns].iloc[-1].astype(float)
-        pool_info = pool_info_df.values.astype(np.float64)
-        # Get block timestamp and steps remaining. We convert timestamp to epoch time here
-        current_block = self.interactive_hyperdrive.interface.get_current_block()
-        timestamp = self.interactive_hyperdrive.interface.get_block_timestamp(current_block)
-        block_timestamp = np.array([timestamp], dtype=np.float64)
-        steps_remaining = np.array([self.env_config.episode_length - self._step_count], dtype=np.float64)
-        # TODO can also add other features, e.g., opening spot price
-
-        out_obs = {}
-        for agent_id in agents:
-            # Long Features: trade type, order_i -> [volume, value, normalized_time_remaining]
-            long_features = np.zeros(self.num_long_features, dtype=np.float64)
-            # Short Features: trade type, order_i -> [volume, value, normalized_time_remaining]
-            short_features = np.zeros(self.num_short_features, dtype=np.float64)
-            # LP: -> [volume, value]
-            lp_features = np.zeros(self.num_lp_features, dtype=np.float64)
-            # Additional features: pnl
-            wallet_features = np.zeros(self.num_wallet_features, dtype=np.float64)
-
-            # Observation data uses floats
-            open_agent_positions = self.agents[agent_id].get_positions(coerce_float=True, calc_pnl=True)
-            all_agent_positions = self.agents[agent_id].get_positions(
-                coerce_float=True, calc_pnl=True, show_closed_positions=True
-            )
-
-            if not open_agent_positions.empty:
-                position_duration = self.interactive_hyperdrive.config.position_duration
-                # We keep negative values for time past maturity
-                open_agent_positions["normalized_time_remaining"] = (
-                    open_agent_positions["maturity_time"] - timestamp
-                ) / position_duration
-
-                long_orders = open_agent_positions[open_agent_positions["token_type"] == "LONG"]
-                # Ensure data is the same as the action space
-                long_orders = long_orders.sort_values("maturity_time")
-                long_orders = long_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
-
-                short_orders = open_agent_positions[open_agent_positions["token_type"] == "SHORT"]
-                # Ensure data is the same as the action space
-                short_orders = short_orders.sort_values("maturity_time")
-                short_orders = short_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
-
-                lp_orders = open_agent_positions[open_agent_positions["token_type"] == "LP"]
-                lp_orders = lp_orders[["token_balance", "pnl"]].values.flatten()
-
-                # Add data to static size arrays
-                long_features[: len(long_orders)] = long_orders
-                short_features[: len(short_orders)] = short_orders
-                lp_features[: len(lp_orders)] = lp_orders
-                # Get PNL
-                total_pnl = np.array(all_agent_positions["pnl"].sum(), dtype=np.float64)
-                wallet_features[0] = total_pnl
-
-            out_obs[agent_id] = np.concatenate(
-                [
-                    pool_config,
-                    pool_info,
-                    block_timestamp,
-                    steps_remaining,
-                    long_features,
-                    short_features,
-                    lp_features,
-                    wallet_features,
-                ]
-            )
-
-        return out_obs
-
     def _calculate_rewards(self, agents: Iterable[str] | None = None) -> dict[str, float]:
+        # Agents passed in means it might be a subset of agents being called.
+        if agents is None:
+            agents = self.agents
+        else:
+            agents = {agent_id: self.agents[agent_id] for agent_id in agents}
+
         return self.reward.calculate_rewards(agents)
 
     def render(self) -> None:

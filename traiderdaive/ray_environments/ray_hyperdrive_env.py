@@ -99,6 +99,8 @@ class RayHyperdriveEnv(BaseEnv):
             ]
         )
 
+    env_config: Config
+
     # Defines allowed render modes and fps
     metadata = {"render_modes": ["human"], "render_fps": 4}
 
@@ -108,6 +110,10 @@ class RayHyperdriveEnv(BaseEnv):
         else:
             self.env_config = env_config["env_config"]
             assert isinstance(self.env_config, RayHyperdriveEnv.Config)
+
+        # Set env shortcuts needed by other functions here
+        self.eval_mode = self.env_config.eval_mode
+        self.sample_actions = self.env_config.sample_actions
 
     def setup_environment(self):
         initial_pool_config = self._get_hyperdrive_pool_config()
@@ -131,7 +137,7 @@ class RayHyperdriveEnv(BaseEnv):
 
     def create_action_space(self) -> spaces.Box:
         """
-        Function to create the action space for the environment.
+        Function to create the action space for a single agent in the environment.
 
         TODO there may be things we can abstract out here for a general purpose
         trading environment.
@@ -443,109 +449,12 @@ class RayHyperdriveEnv(BaseEnv):
                         trade_success[i] = False
         return trade_success
 
-    def step(
-        self, action_dict: dict[str, np.ndarray]
-    ) -> tuple[dict[str, np.ndarray], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]]:
-        """Takes a step in the the environment.
-
-        .. note::
-        Truncated & terminated result in different loss updates for the reward
-        estimator network. In our case, the environment represents an
-        infinite-horizon (continuing) task. The goal for our agent is to
-        maximize the cumulative reward over an infinite or indefinite time
-        horizon.
-
-        This means we need to include a discount factor to ensure convergence.
-        As such, we _always_ want `terminated == False` -- aka the game never
-        ends ("terminates"). We do need to accumulate gradients and do model
-        updates, however, so we must discretize the environment and impose some
-        sort of stopping criteria. This can be achieved by truncating, where we
-        stop the game at some time (can be arbitrary) that is not known by the
-        agent (i.e. not in the observation space).
-
-        Arguments
-        ---------
-        action: ActType
-            An action provided by the agent to update the environment state
-
-        Returns
-        -------
-        tuple[np.ndarray, float, bool, bool, dict[str, Any]]
-            Contains the following
-
-            observation: ObsType
-                An element of the environment's observation_space.
-            reward: float
-                Reward for taking the action.
-            terminated: bool
-                Whether the agent reaches the terminal state, which can be positive or negative.
-                If true, user needs to call reset
-            truncated: bool
-                Whether the truncation condition outside the scope of the MDP is satisfied,
-                e.g., timelimit, or agent going out of bounds.
-                If true, user needs to call reset
-            info: dict[str, Any]
-                Contains auxiliary diagnostic information for debugging, learning, logging.
-        """
-        # TODO: Verify that env_config.episode length is working
-        # TODO: _apply_action() is per agent_id, but _get_observations() is for all agents. Make this consistent?
-        # TODO: Verify that truncated/terminated are being used correctly here. Do we need self.terminateds?
-        self.logger.info(f"\nStep {self._step_count} Time: {datetime.now().strftime('%I:%M:%S %p')}")
-        # Do actions and get truncated status for agents provided, and set the rest to True
-        self.interactive_hyperdrive.sync_database()
-
-        for agent_id, action in action_dict.items():
-            _ = self._apply_action(agent_id, action)
-
-        # Run other bots
-        # Suppress logging here
-        for random_bot in self.random_bots:
-            try:
-                random_bot.execute_policy_action()
-            except BaseException as err:  # pylint: disable=broad-except
-                self.logger.warning(f"Failed to execute random bot: {repr(err)}")
-                # We ignore errors in random bots
-                continue
-
-        # We minimize time between bot making an action, so we advance time after actions have been made
-        # but before the observation
-        self.chain.advance_time(self.env_config.step_advance_time, create_checkpoints=True)
-
-        # Update variable rate with probability Config.rate_change_probability
-        # TODO: Parameterize distribution and clip
-        if self.env_config.variable_rate_policy.do_change_rate(self.rng):
-            new_rate = self.env_config.variable_rate_policy.get_new_rate(
-                self.interactive_hyperdrive.interface, self.rng
-            )
-            self.interactive_hyperdrive.set_variable_rate(new_rate)
-
-        self.interactive_hyperdrive.sync_database()
-
-        observations = self._get_observations(agents=action_dict.keys())
-        info = self._get_info(agents=action_dict.keys())
-        step_rewards = self._calculate_rewards(agents=action_dict.keys())
-
-        episode_over = self._step_count >= self.env_config.episode_length - 1
-
-        truncateds = {agent_id: episode_over for agent_id in action_dict.keys()}
-        terminateds = {agent_id: False for agent_id in action_dict.keys()}
-
-        self.truncateds.update({agent_id for agent_id, truncated in truncateds.items() if truncated})
-        self.terminateds.update({agent_id for agent_id, terminated in terminateds.items() if terminated})
-
-        truncateds["__all__"] = len(self.truncateds) == len(self.agents)
-        terminateds["__all__"] = len(self.terminateds) == len(self.agents)
-
-        self._step_count += 1
-        # TODO when does the episode stop?
-        return observations, step_rewards, terminateds, truncateds, info
-
     def _get_info(self, agents: Iterable[str] | None = None) -> dict:
         agents = agents or self.agents
         info_dict = {agent_id: {} for agent_id in agents}
         return info_dict
 
-    def _get_observations(self, agents: Iterable[str] | None = None) -> dict[str, np.ndarray]:
+    def get_observations(self, agent: LocalHyperdriveAgent) -> dict[str, np.ndarray]:
         agents = agents or self.agents
         # Get the pool config
         pool_config_df = self.interactive_hyperdrive.get_pool_config(coerce_float=True)
