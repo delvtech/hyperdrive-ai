@@ -4,26 +4,19 @@ from __future__ import annotations
 
 import logging
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
-from typing import TYPE_CHECKING, Any, Iterable, Type
+from typing import TYPE_CHECKING, Any, Iterable
 
 import numpy as np
-from agent0 import LocalChain, LocalHyperdrive, PolicyZoo
+from agent0 import LocalChain
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
 from numpy.random import Generator
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
-from scipy.special import expit
-
-from .rewards import DeltaPnl
-from .variable_rate_policy import RandomNormalVariableRate, VariableRatePolicy
 
 if TYPE_CHECKING:
     from agent0.core.hyperdrive.interactive.local_hyperdrive_agent import LocalHyperdriveAgent
-
-    from .rewards.base_reward import BaseReward
 
 AGENT_PREFIX = "agent"
 POLICY_PREFIX = "policy"
