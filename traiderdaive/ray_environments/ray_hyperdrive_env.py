@@ -10,6 +10,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Iterable, Type
 
 import numpy as np
+import pandas as pd
 from agent0 import LocalChain, LocalHyperdrive, PolicyZoo
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
@@ -21,6 +22,8 @@ from .rewards import DeltaPnl
 from .variable_rate_policy import RandomNormalVariableRate, VariableRatePolicy
 
 if TYPE_CHECKING:
+    from agent0.core.hyperdrive.interactive.local_hyperdrive_agent import LocalHyperdriveAgent
+
     from .rewards.base_reward import BaseReward
 
 AGENT_PREFIX = "agent"
@@ -99,7 +102,7 @@ class RayHyperdriveEnv(BaseEnv):
             ]
         )
 
-    env_config: Config
+    env_config: RayHyperdriveEnv.Config
 
     # Defines allowed render modes and fps
     metadata = {"render_modes": ["human"], "render_fps": 4}
@@ -108,7 +111,8 @@ class RayHyperdriveEnv(BaseEnv):
         if env_config.get("env_config") is None:
             self.env_config = self.Config()
         else:
-            self.env_config = env_config["env_config"]
+            # We check the type after in an assertion
+            self.env_config = env_config["env_config"]  # type: ignore
             assert isinstance(self.env_config, RayHyperdriveEnv.Config)
 
         # Set env shortcuts needed by other functions here
@@ -124,6 +128,7 @@ class RayHyperdriveEnv(BaseEnv):
 
         for agent in self.agents.values():
             agent.set_active(pool=self.interactive_hyperdrive)
+            agent.add_funds(base=self.env_config.rl_agent_budget)
 
         self.interactive_hyperdrive.sync_database()
 
@@ -188,55 +193,11 @@ class RayHyperdriveEnv(BaseEnv):
             shape=(action_length_per_trade_set,),
         )
 
-    def create_observation_space(self) -> spaces.Dict:
-        # Observation space is
-        # TODO add more features
-        # Pool Features: spot price, lp share price
-        # TODO use pnl instead of value
-        # TODO add bookkeeping for entry spot price
-        # Long Orders: trade type, order_i -> [volume, value, normalized_time_remaining]
-        # Short Orders: trade type, order_i -> [volume, value, normalized_time_remaining]
-        # LP: -> [volume, value]
-        # Here, orders_i is a direct mapping to agent.wallet
-        # Note normalize_time_to_maturity will always be 0 for LP positions
-        num_pool_features = len(self.env_config.pool_config_columns) + len(self.env_config.pool_info_columns)
-        # Time features: block timestamp and steps remaining
-        num_timing_features = 2
-        # Long and short features: token balance, pnl, time to maturity
-        self.num_long_features = self.env_config.max_positions_per_type * 3
-        self.num_short_features = self.env_config.max_positions_per_type * 3
-        # LP features: token balance, pnl
-        self.num_lp_features = 2
-        # Additional features: pnl
-        self.num_wallet_features = 1
-        inf = 1e10
-        # OS shape = # pool features + block time + steps remaining + max positions per type x num position features
-        # (e.g. token balance, pnl, maturity) + total pnl
-        observation_space_shape = (
-            num_pool_features
-            + num_timing_features
-            + self.num_long_features
-            + self.num_short_features
-            + self.num_lp_features
-            + self.num_wallet_features,
-        )
-        return spaces.Dict(
-            {
-                agent_id: spaces.Box(
-                    low=-inf,
-                    high=inf,
-                    shape=observation_space_shape,
-                    dtype=np.float64,
-                )
-                for agent_id in self.agents
-            }
-        )
-
     def _get_hyperdrive_pool_config(self) -> LocalHyperdrive.Config:
         """Get the Hyperdrive pool config."""
         return LocalHyperdrive.Config()
 
-    def _apply_action(self, agent_id: str, action: np.ndarray) -> list[bool]:
+    def apply_action(self, agent: LocalHyperdriveAgent, action: np.ndarray) -> list[bool]:
         """Execute the bot action on-chain.
 
         Arguments
@@ -291,23 +252,23 @@ class RayHyperdriveEnv(BaseEnv):
         # since any close actions this round will not be accounted for. This
         # is a fine tradeoff, though, since it's an undershoot and the next time
         # apply_action is called the previous closes will be accounted for.
-        agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=False)
+        agent_positions = agent.get_positions(coerce_float=False)
 
         # Closing trades
-        close_trade_success = self._apply_close_trades(agent_id, close_long_short_actions, agent_positions)
+        close_trade_success = self._apply_close_trades(agent, close_long_short_actions, agent_positions)
         trade_success[: len(close_trade_success)] = close_trade_success
         # Open trades
-        open_trade_success = self._apply_open_trades(agent_id, min_tx_amount, open_long_short_actions, agent_positions)
+        open_trade_success = self._apply_open_trades(agent, min_tx_amount, open_long_short_actions, agent_positions)
         trade_success[len(close_trade_success) : len(open_trade_success)] = open_trade_success
         # LP trade
-        trade_success[-1] = self._apply_lp_trades(agent_id, min_tx_amount, lp_actions)
+        trade_success[-1] = self._apply_lp_trades(agent, min_tx_amount, lp_actions)
 
         return trade_success
 
-    def _apply_lp_trades(self, agent_id, min_tx_amount, lp_actions) -> bool:
+    def _apply_lp_trades(self, agent: LocalHyperdriveAgent, min_tx_amount: FixedPoint, lp_actions: np.ndarray) -> bool:
         """Apply the LP trades."""
         trade_success = True
-        agent_wallet = self.rl_agents[agent_id].get_wallet()
+        agent_wallet = agent.get_wallet()
         lp_actions_expit = expit(lp_actions)
         if agent_wallet.balance.amount >= min_tx_amount:
             add_lp_probability = lp_actions_expit[0]
@@ -337,19 +298,21 @@ class RayHyperdriveEnv(BaseEnv):
 
         try:
             if add_lp and add_lp_volume <= agent_wallet.balance.amount:
-                self.rl_agents[agent_id].add_liquidity(add_lp_volume)
-            if remove_lp and remove_lp_volume <= self.rl_agents[agent_id].get_wallet().lp_tokens:
-                self.rl_agents[agent_id].remove_liquidity(remove_lp_volume)
+                agent.add_liquidity(add_lp_volume)
+            if remove_lp and remove_lp_volume <= agent_wallet.lp_tokens:
+                agent.remove_liquidity(remove_lp_volume)
             # Always try and remove withdrawal shares
-            if self.rl_agents[agent_id].get_wallet().withdraw_shares > 0:
+            if agent_wallet.withdraw_shares > 0:
                 # TODO error handling or check when withdrawal shares are not withdrawable
-                self.rl_agents[agent_id].redeem_withdrawal_share(self.rl_agents[agent_id].get_wallet().withdraw_shares)
+                agent.redeem_withdrawal_shares(agent_wallet.withdraw_shares)
         except Exception as err:  # pylint: disable=broad-except
             self.logger.warning(f"Failed to LP: {repr(err)}")
             trade_success = False
         return trade_success
 
-    def _apply_close_trades(self, agent_id, close_long_short_actions, agent_positions) -> list[bool]:
+    def _apply_close_trades(
+        self, agent: LocalHyperdriveAgent, close_long_short_actions: np.ndarray, agent_positions: pd.DataFrame
+    ) -> list[bool]:
         """Close trades."""
         trade_success = [
             True,
@@ -385,12 +348,12 @@ class RayHyperdriveEnv(BaseEnv):
             try:
                 for _, position_to_close in positions_to_close.iterrows():
                     if trade_type == TradeTypes.LONG:
-                        self.rl_agents[agent_id].close_long(
+                        agent.close_long(
                             maturity_time=int(position_to_close["maturity_time"]),
                             bonds=FixedPoint(position_to_close["token_balance"]),
                         )
                     elif trade_type == TradeTypes.SHORT:
-                        self.rl_agents[agent_id].close_short(
+                        agent.close_short(
                             maturity_time=int(position_to_close["maturity_time"]),
                             bonds=FixedPoint(position_to_close["token_balance"]),
                         )
@@ -399,7 +362,13 @@ class RayHyperdriveEnv(BaseEnv):
                 trade_success[i] = False
         return trade_success
 
-    def _apply_open_trades(self, agent_id, min_tx_amount, open_long_short_actions, agent_positions) -> list[bool]:
+    def _apply_open_trades(
+        self,
+        agent: LocalHyperdriveAgent,
+        min_tx_amount: FixedPoint,
+        open_long_short_actions: np.ndarray,
+        agent_positions: pd.DataFrame,
+    ) -> list[bool]:
         """Apply open trades."""
         trade_success = [
             True,
@@ -421,7 +390,7 @@ class RayHyperdriveEnv(BaseEnv):
                     try:
                         # Need to get wallet inside this loop since each loop
                         # iteration could include an open that reduces balance.
-                        agent_wallet_balance = self.rl_agents[agent_id].get_wallet().balance.amount
+                        agent_wallet_balance = agent.get_wallet().balance.amount
                         if trade_type == TradeTypes.LONG and agent_wallet_balance >= min_tx_amount:
                             # Get the agent's max trade amount
                             max_long_amount = self.interactive_hyperdrive.interface.calc_max_long(
@@ -431,10 +400,10 @@ class RayHyperdriveEnv(BaseEnv):
                             amount_probability = FixedPoint(expit(open_long_short_actions[trade_type.value, 1]))
                             # Map the probability to be between the min and max transaction amounts
                             volume_adjusted = min_tx_amount + amount_probability * (max_long_amount - min_tx_amount)
-                            self.rl_agents[agent_id].open_long(base=volume_adjusted)
+                            agent.open_long(base=volume_adjusted)
                         elif trade_type == TradeTypes.SHORT and agent_wallet_balance >= min_tx_amount:
                             # Get the agent's max trade amount
-                            agent_wallet_balance = self.rl_agents[agent_id].get_wallet().balance.amount
+                            agent_wallet_balance = agent.get_wallet().balance.amount
                             max_short_amount = self.interactive_hyperdrive.interface.calc_max_short(
                                 budget=agent_wallet_balance
                             )
@@ -442,20 +411,24 @@ class RayHyperdriveEnv(BaseEnv):
                             amount_probability = FixedPoint(expit(open_long_short_actions[trade_type.value, 1]))
                             # Map the probability to be between the min and max transaction amounts
                             volume_adjusted = min_tx_amount + amount_probability * (max_short_amount - min_tx_amount)
-                            self.rl_agents[agent_id].open_short(bonds=volume_adjusted)
+                            agent.open_short(bonds=volume_adjusted)
                     # Base exception here to catch rust errors
                     except BaseException as err:  # pylint: disable=broad-except
                         self.logger.warning(f"Failed to open {trade_type} trade: {repr(err)}")
                         trade_success[i] = False
         return trade_success
 
-    def _get_info(self, agents: Iterable[str] | None = None) -> dict:
-        agents = agents or self.agents
-        info_dict = {agent_id: {} for agent_id in agents}
-        return info_dict
+    def step_environment(self):
+        # Update variable rate with probability Config.rate_change_probability
+        # TODO: Parameterize distribution and clip
+        if self.env_config.variable_rate_policy.do_change_rate(self.rng):
+            new_rate = self.env_config.variable_rate_policy.get_new_rate(
+                self.interactive_hyperdrive.interface, self.rng
+            )
+            self.interactive_hyperdrive.set_variable_rate(new_rate)
 
-    def get_observations(self, agent: LocalHyperdriveAgent) -> dict[str, np.ndarray]:
-        agents = agents or self.agents
+    def get_shared_observations(self) -> np.ndarray:
+        self.interactive_hyperdrive.sync_database()
         # Get the pool config
         pool_config_df = self.interactive_hyperdrive.get_pool_config(coerce_float=True)
         pool_config_df = pool_config_df[self.env_config.pool_config_columns].astype(float)
@@ -470,70 +443,79 @@ class RayHyperdriveEnv(BaseEnv):
         block_timestamp = np.array([timestamp], dtype=np.float64)
         steps_remaining = np.array([self.env_config.episode_length - self._step_count], dtype=np.float64)
         # TODO can also add other features, e.g., opening spot price
+        return np.concatenate(
+            [
+                pool_config,
+                pool_info,
+                block_timestamp,
+                steps_remaining,
+            ]
+        )
 
-        out_obs = {}
-        for agent_id in agents:
-            # Long Features: trade type, order_i -> [volume, value, normalized_time_remaining]
-            long_features = np.zeros(self.num_long_features, dtype=np.float64)
-            # Short Features: trade type, order_i -> [volume, value, normalized_time_remaining]
-            short_features = np.zeros(self.num_short_features, dtype=np.float64)
-            # LP: -> [volume, value]
-            lp_features = np.zeros(self.num_lp_features, dtype=np.float64)
-            # Additional features: pnl
-            wallet_features = np.zeros(self.num_wallet_features, dtype=np.float64)
+    def get_agent_observations(self, agent: LocalHyperdriveAgent) -> np.ndarray:
 
-            # Observation data uses floats
-            open_agent_positions = self.rl_agents[agent_id].get_positions(coerce_float=True, calc_pnl=True)
-            all_agent_positions = self.rl_agents[agent_id].get_positions(
-                coerce_float=True, calc_pnl=True, show_closed_positions=True
-            )
+        # Long and short features: token balance, pnl, time to maturity
+        num_long_features = self.env_config.max_positions_per_type * 3
+        num_short_features = self.env_config.max_positions_per_type * 3
+        # LP features: token balance, pnl
+        num_lp_features = 2
+        num_wallet_features = 1
 
-            if not open_agent_positions.empty:
-                position_duration = self.interactive_hyperdrive.config.position_duration
-                # We keep negative values for time past maturity
-                open_agent_positions["normalized_time_remaining"] = (
-                    open_agent_positions["maturity_time"] - timestamp
-                ) / position_duration
+        # Long Features: trade type, order_i -> [volume, value, normalized_time_remaining]
+        long_features = np.zeros(num_long_features, dtype=np.float64)
+        # Short Features: trade type, order_i -> [volume, value, normalized_time_remaining]
+        short_features = np.zeros(num_short_features, dtype=np.float64)
+        # LP: -> [volume, value]
+        lp_features = np.zeros(num_lp_features, dtype=np.float64)
+        # Additional features: pnl
+        wallet_features = np.zeros(num_wallet_features, dtype=np.float64)
 
-                long_orders = open_agent_positions[open_agent_positions["token_type"] == "LONG"]
-                # Ensure data is the same as the action space
-                long_orders = long_orders.sort_values("maturity_time")
-                long_orders = long_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
+        current_block = self.interactive_hyperdrive.interface.get_current_block()
+        timestamp = self.interactive_hyperdrive.interface.get_block_timestamp(current_block)
 
-                short_orders = open_agent_positions[open_agent_positions["token_type"] == "SHORT"]
-                # Ensure data is the same as the action space
-                short_orders = short_orders.sort_values("maturity_time")
-                short_orders = short_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
+        # Observation data uses floats
+        open_agent_positions = agent.get_positions(coerce_float=True, calc_pnl=True)
+        all_agent_positions = agent.get_positions(coerce_float=True, calc_pnl=True, show_closed_positions=True)
 
-                lp_orders = open_agent_positions[open_agent_positions["token_type"] == "LP"]
-                lp_orders = lp_orders[["token_balance", "pnl"]].values.flatten()
+        if not open_agent_positions.empty:
+            position_duration = self.interactive_hyperdrive.config.position_duration
+            # We keep negative values for time past maturity
+            open_agent_positions["normalized_time_remaining"] = (
+                open_agent_positions["maturity_time"] - timestamp
+            ) / position_duration
 
-                # Add data to static size arrays
-                long_features[: len(long_orders)] = long_orders
-                short_features[: len(short_orders)] = short_orders
-                lp_features[: len(lp_orders)] = lp_orders
-                # Get PNL
-                total_pnl = np.array(all_agent_positions["pnl"].sum(), dtype=np.float64)
-                wallet_features[0] = total_pnl
+            long_orders = open_agent_positions[open_agent_positions["token_type"] == "LONG"]
+            # Ensure data is the same as the action space
+            long_orders = long_orders.sort_values("maturity_time")
+            long_orders = long_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
 
-            out_obs[agent_id] = np.concatenate(
-                [
-                    pool_config,
-                    pool_info,
-                    block_timestamp,
-                    steps_remaining,
-                    long_features,
-                    short_features,
-                    lp_features,
-                    wallet_features,
-                ]
-            )
+            short_orders = open_agent_positions[open_agent_positions["token_type"] == "SHORT"]
+            # Ensure data is the same as the action space
+            short_orders = short_orders.sort_values("maturity_time")
+            short_orders = short_orders[["token_balance", "pnl", "normalized_time_remaining"]].values.flatten()
 
-        return out_obs
+            lp_orders = open_agent_positions[open_agent_positions["token_type"] == "LP"]
+            lp_orders = lp_orders[["token_balance", "pnl"]].values.flatten()
 
-    def _calculate_rewards(self, agents: Iterable[str] | None = None) -> dict[str, float]:
-        return self.reward.calculate_rewards(agents)
+            # Add data to static size arrays
+            long_features[: len(long_orders)] = long_orders
+            short_features[: len(short_orders)] = short_orders
+            lp_features[: len(lp_orders)] = lp_orders
+            # Get PNL
+            total_pnl = np.array(all_agent_positions["pnl"].sum(), dtype=np.float64)
+            wallet_features[0] = total_pnl
 
-    def render(self) -> None:
-        """Renders the environment. No rendering available for hyperdrive env."""
-        return None
+        return np.concatenate(
+            [
+                long_features,
+                short_features,
+                lp_features,
+                wallet_features,
+            ]
+        )
+
+    def _calculate_rewards(self, agent_ids: Iterable[str] | None = None) -> dict[str, float]:
+        # Note since our reward calculation handles iterating over a collection of agents,
+        # we overwrite the outer function to do this for us instead of overwriting
+        # `calculate_agent_reward`.
+        return self.reward.calculate_rewards(agent_ids)

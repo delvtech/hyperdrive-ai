@@ -43,10 +43,10 @@ class TotalRealizedValue(BaseReward):
         float
             The computed reward.
         """
-        agent_positions = current_positions[current_positions["wallet_address"] == self.env.rl_agents[agent_id].address]
+        agent_positions = current_positions[current_positions["wallet_address"] == self.env.agents[agent_id].address]
         # We use the absolute realized value and the eth balance as the reward
         total_realized_value = float(agent_positions["realized_value"].sum())
-        scaled_value = get_account_balance(self.env.chain._web3, self.env.rl_agents[agent_id].address)
+        scaled_value = get_account_balance(self.env.chain._web3, self.env.agents[agent_id].address)
         assert scaled_value is not None  # type narrowing
         agent_eth_balance = float(FixedPoint(scaled_value=scaled_value))
         reward = total_realized_value + agent_eth_balance

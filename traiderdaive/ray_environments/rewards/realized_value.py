@@ -42,7 +42,7 @@ class RealizedValue(BaseReward):
             The computed reward.
         """
         # Filter by agent ID
-        agent_positions = current_positions[current_positions["wallet_address"] == self.env.rl_agents[agent_id].address]
+        agent_positions = current_positions[current_positions["wallet_address"] == self.env.agents[agent_id].address]
         # Reward is in units of base
         total_value = float(agent_positions["realized_value"].sum())
         return total_value

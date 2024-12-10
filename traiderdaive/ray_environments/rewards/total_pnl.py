@@ -42,7 +42,7 @@ class TotalPnl(BaseReward):
             The computed reward.
         """
         # Filter by agent ID
-        agent_positions = current_positions[current_positions["wallet_address"] == self.env.rl_agents[agent_id].address]
+        agent_positions = current_positions[current_positions["wallet_address"] == self.env.agents[agent_id].address]
         total_pnl = float(agent_positions["pnl"].sum())
         # reward is in units of base
         return total_pnl

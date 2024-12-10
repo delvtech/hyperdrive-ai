@@ -45,7 +45,7 @@ class DeltaPnl(BaseReward):
             The computed reward.
         """
         # Filter by agent ID
-        agent_positions = current_positions[current_positions["wallet_address"] == self.env.rl_agents[agent_id].address]
+        agent_positions = current_positions[current_positions["wallet_address"] == self.env.agents[agent_id].address]
         # Get new PnL
         new_pnl = float(agent_positions["pnl"].sum())
         # Reward is in units of base

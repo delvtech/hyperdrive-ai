@@ -63,7 +63,6 @@ class BaseEnv(MultiAgentEnv):
 
         # RL Agents Config
         num_agents: int = 4
-        # The constant trade amounts for longs and shorts
         rl_agent_budget: FixedPoint = FixedPoint(1_000_000)
         max_positions_per_type: int = 10
         base_reward_scale: float = 0.0
@@ -120,6 +119,18 @@ class BaseEnv(MultiAgentEnv):
         # Defaults to returning empty array
         return np.zeros(shape=(0,))
 
+    def apply_action(self, agent: LocalHyperdriveAgent, action: np.ndarray):
+        """Function to apply an action to the environment."""
+        raise NotImplementedError
+
+    def step_environment(self):
+        """Function to do any updates to the environment after applying actions and advancing time."""
+        # Default behavior is no op
+        pass
+
+    def calculate_agent_reward(self, agent: LocalHyperdriveAgent) -> dict[str, float]:
+        raise NotImplementedError
+
     ######### Setup functions ########
 
     # FIXME give type to env_config
@@ -166,7 +177,6 @@ class BaseEnv(MultiAgentEnv):
         # these agents would be general purpose.
         self.agents = {
             agent_id: self.chain.init_agent(
-                base=self.env_config.rl_agent_budget,
                 eth=FixedPoint(100),
                 name=agent_id,
             )
@@ -300,29 +310,18 @@ class BaseEnv(MultiAgentEnv):
         # TODO: Verify that truncated/terminated are being used correctly here. Do we need self.terminateds?
         self.logger.info(f"\nStep {self._step_count} Time: {datetime.now().strftime('%I:%M:%S %p')}")
 
-        # Do actions and get truncated status for agents provided, and set the rest to True
-        self.interactive_hyperdrive.sync_database()
-
-        for agent_id, action in action_dict.items():
-            _ = self._apply_action(agent_id, action)
+        self._apply_action(action_dict=action_dict)
 
         # We minimize time between bot making an action, so we advance time after actions have been made
         # but before the observation
         self.chain.advance_time(self.env_config.step_advance_time, create_checkpoints=True)
 
-        # Update variable rate with probability Config.rate_change_probability
-        # TODO: Parameterize distribution and clip
-        if self.env_config.variable_rate_policy.do_change_rate(self.rng):
-            new_rate = self.env_config.variable_rate_policy.get_new_rate(
-                self.interactive_hyperdrive.interface, self.rng
-            )
-            self.interactive_hyperdrive.set_variable_rate(new_rate)
+        self.step_environment()
 
-        self.interactive_hyperdrive.sync_database()
+        observations = self._get_observations(agent_ids=action_dict.keys())
+        info = self._get_info(agent_ids=action_dict.keys())
 
-        observations = self._get_observations(agents=action_dict.keys())
-        info = self._get_info(agents=action_dict.keys())
-        step_rewards = self._calculate_rewards(agents=action_dict.keys())
+        step_rewards = self._calculate_rewards(agent_ids=action_dict.keys())
 
         episode_over = self._step_count >= self.env_config.episode_length - 1
 
@@ -360,17 +359,17 @@ class BaseEnv(MultiAgentEnv):
             )
         return spaces.Dict(out_obs_space)
 
-    def _get_observations(self, agents: Iterable[str] | None = None) -> dict[str, np.ndarray]:
+    def _get_observations(self, agent_ids: Iterable[str] | None = None) -> dict[str, np.ndarray]:
         """Function to get observations from the environment.
 
         This function calls `get_shared_observation` and `get_agent_observation`,
         and concatenates them into a single observation for each agent
         """
         # Agents passed in means it might be a subset of agents being called.
-        if agents is None:
+        if agent_ids is None:
             agents = self.agents
         else:
-            agents = {agent_id: self.agents[agent_id] for agent_id in agents}
+            agents = {agent_id: self.agents[agent_id] for agent_id in agent_ids}
 
         shared_observations = self.get_shared_observation()
         out_obs = {}
@@ -381,20 +380,31 @@ class BaseEnv(MultiAgentEnv):
             )
         return out_obs
 
-    def _get_info(self, agents: Iterable[str] | None = None) -> dict:
+    def _get_info(self, agent_ids: Iterable[str] | None = None) -> dict:
+        if agent_ids is None:
+            agents = self.agents
+        else:
+            agents = {agent_id: self.agents[agent_id] for agent_id in agent_ids}
         # TODO expose get_info to subclasses
-        agents = agents or self._agent_ids
         info_dict = {agent_id: {} for agent_id in agents}
         return info_dict
 
-    def _calculate_rewards(self, agents: Iterable[str] | None = None) -> dict[str, float]:
+    def _apply_action(self, action_dict: dict[str, np.ndarray]) -> None:
         # Agents passed in means it might be a subset of agents being called.
-        if agents is None:
+        for agent_id, action in action_dict.items():
+            _ = self.apply_action(self.agents[agent_id], action)
+
+    def _calculate_rewards(self, agent_ids: Iterable[str] | None = None) -> dict[str, float]:
+        # Agents passed in means it might be a subset of agents being called.
+        if agent_ids is None:
             agents = self.agents
         else:
-            agents = {agent_id: self.agents[agent_id] for agent_id in agents}
+            agents = {agent_id: self.agents[agent_id] for agent_id in agent_ids}
 
-        return self.reward.calculate_rewards(agents)
+        out_rewards = {}
+        for agent_id, agent in agents.items():
+            out_rewards[agent_id] = self.calculate_agent_reward(agent)
+        return out_rewards
 
     def render(self) -> None:
         """Renders the environment. No rendering available for hyperdrive env."""
