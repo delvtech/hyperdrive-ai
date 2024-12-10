@@ -136,6 +136,7 @@ class RayHyperdriveEnv(BaseEnv):
         self.interactive_hyperdrive.sync_database()
         # Call reset on variable rate policy
         self.env_config.variable_rate_policy.reset(self.rng)
+        # TODO do we also need to reset the reward policy?
 
     def create_action_space(self) -> spaces.Box:
         """
