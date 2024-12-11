@@ -2,20 +2,20 @@ import argparse
 import logging
 import sys
 from functools import partial
-from IPython import embed
 from typing import Sequence
 
 import numpy as np
 import pandas as pd
 import ray
-from ray.rllib.algorithms import AlgorithmConfig
-from ray.rllib.algorithms.ppo import PPOConfig
-
 from agent0 import LocalChain, LocalHyperdrive
 from agent0.core.hyperdrive.interactive.local_hyperdrive_agent import LocalHyperdriveAgent
 from fixedpointmath import FixedPoint
+from IPython import embed
+from ray.rllib.algorithms import AlgorithmConfig
+from ray.rllib.algorithms.ppo import PPOConfig
+
 from traiderdaive.ray_environments.attack_hyperdrive_env import AttackHyperdriveEnv
-from traiderdaive.ray_environments.ray_hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX
+from traiderdaive.ray_environments.hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX
 from traiderdaive.ray_environments.rewards import TotalRealizedValue
 from traiderdaive.ray_environments.variable_rate_policy import ConstantVariableRate
 from traiderdaive.utils.set_seeds import set_seeds

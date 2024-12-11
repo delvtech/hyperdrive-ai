@@ -11,7 +11,7 @@ from agent0 import LocalHyperdrive
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
 
-from .ray_hyperdrive_env import RayHyperdriveEnv, TradeTypes
+from .hyperdrive_env import RayHyperdriveEnv, TradeTypes
 
 if TYPE_CHECKING:
     from agent0.core.hyperdrive.interactive.local_hyperdrive_agent import LocalHyperdriveAgent
@@ -70,7 +70,7 @@ class AttackHyperdriveEnv(RayHyperdriveEnv):
         # Note that the bot _could_ learn this; we are enforcing it to help out
         assert self.env_config.max_positions_per_type == 1
 
-    def create_action_spce(self) -> spaces.Box:
+    def create_action_space(self) -> spaces.Box:
         return spaces.Box(
             low=-1e2,
             high=1e2,

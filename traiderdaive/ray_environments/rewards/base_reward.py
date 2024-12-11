@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Iterable
 import pandas as pd
 
 if TYPE_CHECKING:
-    from ..ray_hyperdrive_env import RayHyperdriveEnv
+    from ..hyperdrive_env import RayHyperdriveEnv
 
 
 class BaseReward:
