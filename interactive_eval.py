@@ -32,8 +32,6 @@ def main():
     env_config = AttackHyperdriveEnv.Config(
         variable_rate_policy=rate_policy,
         reward_policy=reward,
-        num_random_bots=0,
-        num_random_hold_bots=0,
         num_agents=1,
         episode_length=50 + 1,  # +1 Because the final sample() call calls reset()
         step_advance_time=24 * 3600,  # 24 hrs

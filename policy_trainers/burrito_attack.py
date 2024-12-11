@@ -35,8 +35,6 @@ def run_train():
     env_config = AttackHyperdriveEnv.Config(
         variable_rate_policy=rate_policy,
         reward_policy=reward,
-        num_random_bots=0,
-        num_random_hold_bots=0,
         num_agents=1,
         episode_length=50,
         step_advance_time=24 * 3600,  # 24 hrs
