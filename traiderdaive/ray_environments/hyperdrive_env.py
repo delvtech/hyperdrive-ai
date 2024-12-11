@@ -12,6 +12,7 @@ import pandas as pd
 from agent0 import LocalHyperdrive
 from fixedpointmath import FixedPoint
 from gymnasium import spaces
+from ray.rllib.utils.typing import EnvConfigDict
 from scipy.special import expit
 
 from .base_env import BaseEnv
@@ -101,7 +102,7 @@ class RayHyperdriveEnv(BaseEnv):
 
     env_config: RayHyperdriveEnv.Config
 
-    def init_config(self, env_config) -> None:
+    def init_config(self, env_config: EnvConfigDict) -> None:
         if env_config.get("env_config") is None:
             self.env_config = self.Config()
         else:
