@@ -421,7 +421,7 @@ class RayHyperdriveEnv(BaseEnv):
         current_block = self.interactive_hyperdrive.interface.get_current_block()
         timestamp = self.interactive_hyperdrive.interface.get_block_timestamp(current_block)
         block_timestamp = np.array([timestamp], dtype=np.float64)
-        steps_remaining = np.array([self.env_config.episode_length - self._step_count], dtype=np.float64)
+        steps_remaining = np.array([self.env_config.episode_length - self.step_count], dtype=np.float64)
         # TODO can also add other features, e.g., opening spot price
         return np.concatenate(
             [

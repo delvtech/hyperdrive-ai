@@ -6,6 +6,7 @@ import logging
 import warnings
 from dataclasses import dataclass
 from datetime import datetime
+from logging import Logger
 from typing import TYPE_CHECKING, Any, Iterable
 
 import numpy as np
@@ -82,6 +83,10 @@ class BaseEnv(MultiAgentEnv):
     """The local chain object."""
     agents: dict[str, LocalHyperdriveAgent]
     """The agents in the multiagent environment."""
+    step_count: int
+    """The current step count in the environment."""
+    logger: Logger
+    """The logger for the environment."""
 
     ######### Subclass functions ########
     def init_config(self, env_config) -> None:
@@ -244,6 +249,12 @@ class BaseEnv(MultiAgentEnv):
             for agent_id in self._agent_ids
         }
 
+        # Set up member variables potentially needed by subclasses
+        self.step_count = 0
+        # setup logger
+        self.logger = logging.getLogger()
+        self.logger.info("rng seed: " + str(random_seed))
+
         # Call any initialization setup before we snapshot
         self.setup_environment()
 
@@ -261,11 +272,7 @@ class BaseEnv(MultiAgentEnv):
 
         # episode variables
         self._prev_pnls: dict[str, float] = {agent_id: 0.0 for agent_id in self._agent_ids}
-        self._step_count = 0
 
-        # setup logger
-        self.logger = logging.getLogger()
-        self.logger.info("rng seed: " + str(random_seed))
         super().__init__()
 
     def __del__(self) -> None:
@@ -308,7 +315,7 @@ class BaseEnv(MultiAgentEnv):
 
         # Reset internal member variables
         self._prev_pnls: dict[str, float] = {agent_id: 0.0 for agent_id in self._agent_ids}
-        self._step_count = 0
+        self.step_count = 0
         self._terminateds = set()
         self._truncateds = set()
 
@@ -365,7 +372,7 @@ class BaseEnv(MultiAgentEnv):
         # TODO: Verify that env_config.episode length is working
         # TODO: _apply_action() is per agent_id, but _get_observations() is for all agents. Make this consistent?
         # TODO: Verify that truncated/terminated are being used correctly here. Do we need self.terminateds?
-        self.logger.info(f"\nStep {self._step_count} Time: {datetime.now().strftime('%I:%M:%S %p')}")
+        self.logger.info(f"\nStep {self.step_count} Time: {datetime.now().strftime('%I:%M:%S %p')}")
 
         self._apply_action(action_dict=action_dict)
 
@@ -380,7 +387,7 @@ class BaseEnv(MultiAgentEnv):
 
         step_rewards = self._calculate_rewards(agent_ids=action_dict.keys())
 
-        episode_over = self._step_count >= self.env_config.episode_length - 1
+        episode_over = self.step_count >= self.env_config.episode_length - 1
 
         truncateds = {agent_id: episode_over for agent_id in action_dict.keys()}
         terminateds = {agent_id: False for agent_id in action_dict.keys()}
@@ -391,7 +398,7 @@ class BaseEnv(MultiAgentEnv):
         truncateds["__all__"] = len(self._truncateds) == len(self._agent_ids)
         terminateds["__all__"] = len(self._terminateds) == len(self._agent_ids)
 
-        self._step_count += 1
+        self.step_count += 1
         # TODO when does the episode stop?
         return observations, step_rewards, terminateds, truncateds, info
 
