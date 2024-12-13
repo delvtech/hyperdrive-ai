@@ -6,7 +6,7 @@ import torch
 from ray.rllib.algorithms import AlgorithmConfig
 from ray.rllib.algorithms.ppo import PPOConfig
 
-from traiderdaive.ray_environments.ray_hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX, RayHyperdriveEnv
+from traiderdaive.ray_environments.hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX, RayHyperdriveEnv
 from traiderdaive.ray_environments.variable_rate_policy import RandomRatePolicy
 
 GPU = False

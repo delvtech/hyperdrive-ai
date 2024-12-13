@@ -52,9 +52,9 @@ class ValueAboveInitialLp(BaseReward):
         assert lp_eth_balance is not None  # type narrowing
         lp_total_value = lp_pnl + lp_eth_balance
         # Get total value of agent address
-        agent_positions = current_positions[current_positions["wallet_address"] == self.env.rl_agents[agent_id].address]
+        agent_positions = current_positions[current_positions["wallet_address"] == self.env.agents[agent_id].address]
         total_realized_value = float(agent_positions["realized_value"].sum())
-        scaled_value = get_account_balance(self.env.chain._web3, self.env.rl_agents[agent_id].address)
+        scaled_value = get_account_balance(self.env.chain._web3, self.env.agents[agent_id].address)
         assert scaled_value is not None  # type narrowing
         agent_eth_balance = float(FixedPoint(scaled_value=scaled_value))
         agent_total_value = total_realized_value + agent_eth_balance

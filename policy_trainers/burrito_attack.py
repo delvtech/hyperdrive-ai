@@ -9,8 +9,8 @@ from ray.rllib.algorithms import AlgorithmConfig
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.tune.logger import pretty_print
 
-from traiderdaive.ray_environments.ray_hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX
 from traiderdaive.ray_environments.attack_hyperdrive_env import AttackHyperdriveEnv
+from traiderdaive.ray_environments.hyperdrive_env import AGENT_PREFIX, POLICY_PREFIX
 from traiderdaive.ray_environments.rewards import TotalRealizedValue
 from traiderdaive.ray_environments.variable_rate_policy import ConstantVariableRate
 from traiderdaive.utils.logging import create_log_dir, get_logger_creator
@@ -35,8 +35,6 @@ def run_train():
     env_config = AttackHyperdriveEnv.Config(
         variable_rate_policy=rate_policy,
         reward_policy=reward,
-        num_random_bots=0,
-        num_random_hold_bots=0,
         num_agents=1,
         episode_length=50,
         step_advance_time=24 * 3600,  # 24 hrs
