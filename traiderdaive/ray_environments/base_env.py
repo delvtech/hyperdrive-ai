@@ -14,7 +14,6 @@ from fixedpointmath import FixedPoint
 from gymnasium import spaces
 from numpy.random import Generator
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
-from ray.rllib.utils.typing import EnvConfigDict
 
 if TYPE_CHECKING:
     from agent0.core.hyperdrive.interactive.local_hyperdrive_agent import LocalHyperdriveAgent
@@ -85,7 +84,7 @@ class BaseEnv(MultiAgentEnv):
     """The agents in the multiagent environment."""
 
     ######### Subclass functions ########
-    def init_config(self, env_config: EnvConfigDict) -> None:
+    def init_config(self, env_config) -> None:
         """Function to (1) ensure the env_config is set and typed correctly, and (2)
         set any variable shortcuts needed from the env config.
 
@@ -198,10 +197,10 @@ class BaseEnv(MultiAgentEnv):
     # FIXME give type to env_config
     def __init__(
         self,
-        env_config: EnvConfigDict,
+        env_config,
     ):
         """Initializes the environment"""
-        self.worker_index = env_config["worker_index"]
+        self.worker_index = env_config.worker_index
         self.init_config(env_config)
 
         # Multiagent setup
