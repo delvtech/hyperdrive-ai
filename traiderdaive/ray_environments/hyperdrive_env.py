@@ -407,7 +407,7 @@ class RayHyperdriveEnv(BaseEnv):
             )
             self.interactive_hyperdrive.set_variable_rate(new_rate)
 
-    def get_shared_observations(self) -> np.ndarray:
+    def get_shared_observation(self) -> np.ndarray:
         self.interactive_hyperdrive.sync_database()
         # Get the pool config
         pool_config_df = self.interactive_hyperdrive.get_pool_config(coerce_float=True)
@@ -432,7 +432,7 @@ class RayHyperdriveEnv(BaseEnv):
             ]
         )
 
-    def get_agent_observations(self, agent: LocalHyperdriveAgent) -> np.ndarray:
+    def get_agent_observation(self, agent: LocalHyperdriveAgent) -> np.ndarray:
 
         # Long and short features: token balance, pnl, time to maturity
         num_long_features = self.env_config.max_positions_per_type * 3
