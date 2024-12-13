@@ -46,6 +46,26 @@ def run_train():
     ray.init(local_mode=False, _temp_dir=os.path.expanduser("~/ray_results/tmp"))  # Use local_mode=True for debugging
     config: AlgorithmConfig = (
         PPOConfig()
+        .environment(env=AttackHyperdriveEnv, env_config={"env_config": env_config})
+        .api_stack(enable_rl_module_and_learner=True, enable_env_runner_and_connector_v2=True)
+        .env_runners(
+            num_env_runners=5,
+            num_envs_per_env_runner=1,
+            sample_timeout_s=120,
+            rollout_fragment_length="auto",
+        )
+        .resources(num_cpus_for_main_process=1, num_gpus=1 if GPU else 0)
+        .learners(
+            num_learners=0,
+            num_gpus_per_learner=1 if GPU else 0,
+            num_cpus_per_learner=0 if GPU else 1,
+        )
+        .multi_agent(
+            policies=set(policies),
+            # Mapping agent0 to policy0, etc.
+            policy_mapping_fn=(lambda agent_id, episode, **kwargs: f"{POLICY_PREFIX}{agent_id.lstrip(AGENT_PREFIX)}"),
+            policies_to_train=policies,
+        )
         .training(
             # PPO params listed in /ray/rllib/algorithms/ppo/ppo.py
             # MDP discount factor TODO: Is this used in PPO?
@@ -90,26 +110,6 @@ def run_train():
             # Model params
             # TODO: vf_share_layers: Should actor and critic share layers? https://arxiv.org/abs/2006.05990
             model={"uses_new_env_runners": True, "vf_share_layers": False},
-        )
-        .environment(env=AttackHyperdriveEnv, env_config={"env_config": env_config})
-        .api_stack(enable_rl_module_and_learner=True, enable_env_runner_and_connector_v2=True)
-        .env_runners(
-            num_env_runners=5,
-            num_envs_per_env_runner=1,
-            sample_timeout_s=120,
-            rollout_fragment_length="auto",
-        )
-        .resources(num_cpus_for_main_process=1, num_gpus=1 if GPU else 0)
-        .learners(
-            num_learners=0,
-            num_gpus_per_learner=1 if GPU else 0,
-            num_cpus_per_learner=0 if GPU else 1,
-        )
-        .multi_agent(
-            policies=set(policies),
-            # Mapping agent0 to policy0, etc.
-            policy_mapping_fn=(lambda agent_id, episode, **kwargs: f"{POLICY_PREFIX}{agent_id.lstrip(AGENT_PREFIX)}"),
-            policies_to_train=policies,
         )
     )
 
