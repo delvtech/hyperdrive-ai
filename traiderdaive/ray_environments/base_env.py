@@ -419,7 +419,7 @@ class BaseEnv(MultiAgentEnv):
                 low=-np.inf,
                 high=np.inf,
                 shape=obs_shape,
-                dtype=np.float32,
+                dtype=np.float64,
             )
         return spaces.Dict(out_obs_space)
 
