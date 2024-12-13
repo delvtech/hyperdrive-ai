@@ -5,5 +5,5 @@
 -e ../agent0[all]
 gymnasium
 scipy
-ray[rllib]
+ray[rllib] == 2.35
 torch
