@@ -444,7 +444,7 @@ class BaseEnv(MultiAgentEnv):
             )
         return out_obs
 
-    def _get_info(self, agent_ids: Iterable[str] | None = None) -> dict:
+    def _get_info(self, agent_ids: Iterable[str] | None = None) -> dict[str, Any]:
         if agent_ids is None:
             agents = self.agents
         else:

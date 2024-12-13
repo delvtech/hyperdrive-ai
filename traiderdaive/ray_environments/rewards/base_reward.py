@@ -107,7 +107,7 @@ class BaseReward:
             agents = self.env.agents
 
         rewards = {}
-        if self.env._step_count == self.env.env_config.episode_length - 1:
+        if self.env.step_count == self.env.env_config.episode_length - 1:
             current_positions = self.env.interactive_hyperdrive.get_positions(
                 show_closed_positions=True, calc_pnl=True, coerce_float=True
             )
