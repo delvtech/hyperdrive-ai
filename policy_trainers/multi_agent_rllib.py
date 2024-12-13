@@ -14,7 +14,7 @@ from traiderdaive.ray_environments.rewards import TotalRealizedValue
 from traiderdaive.ray_environments.variable_rate_policy import RandomRatePolicy
 from traiderdaive.utils.logging import create_log_dir, get_logger_creator
 
-GPU = False
+GPU = True
 
 
 def run_train():
